@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#grad512)" />
+  <!-- Card Stack Graphic -->
+  <rect x="112" y="154" width="234" height="176" rx="26" fill="#ffffff" opacity="0.25" transform="rotate(-8 229 242)" />
+  <rect x="138" y="144" width="245" height="192" rx="26" fill="#ffffff" opacity="0.45" transform="rotate(4 260 240)" />
+  <rect x="133" y="138" width="246" height="198" rx="32" fill="#ffffff" />
+  <!-- Inner card content lines -->
+  <circle cx="186" cy="192" r="16" fill="#0d9488" />
+  <path d="M224 192h112M176 240h160M176 278h100" stroke="#0d9488" stroke-width="11" stroke-linecap="round" />
+</svg>
