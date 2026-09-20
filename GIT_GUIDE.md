@@ -141,6 +141,54 @@ git pull
 
 ---
 
+### 2.8 วิธีเช็คว่า "เซฟแล้วหรือยัง?" และ "อัพขึ้น GitHub แล้วหรือยัง?"
+
+#### 1) วิธีเช็คว่า "เซฟในเครื่องแล้วหรือยัง (Local Commit)":
+พิมพ์คำสั่ง:
+```powershell
+git status
+```
+- **ถ้าเซฟเรียบร้อยหมดแล้ว:** จะขึ้นว่า:
+  ```text
+  nothing to commit, working tree clean
+  ```
+  *(แปลว่า: ทุกไฟล์ถูกเซฟบันทึกเข้าประวัติแล้ว ไม่มีอะไรตกค้าง)*
+- **ถ้ายังไม่ได้เซฟ:** จะขึ้นรายชื่อไฟล์สีแดง/สีเขียวใต้หัวข้อ `Changes not staged for commit` หรือ `Untracked files`
+
+หรือดูประวัติจุดเซฟล่าสุด:
+```powershell
+git log -n 1 --oneline
+```
+*(จะโชว์รหัส Commit และข้อความที่คุณหรือ AI เพิ่งเซฟไปล่าสุด)*
+
+---
+
+#### 2) วิธีเช็คว่า "อัพขึ้น GitHub แล้วหรือยัง (Pushed to Cloud)":
+**วิธีที่ 1: เช็คผ่าน Terminal ทันที**
+พิมพ์คำสั่ง:
+```powershell
+git status
+```
+- **ถ้าอัพขึ้น GitHub เรียบร้อยแล้ว:** จะขึ้นว่า:
+  ```text
+  Your branch is up to date with 'origin/main'.
+  ```
+  *(แปลว่า: เครื่องเรากับบน GitHub ซิงค์ตรงกัน 100%)*
+- **ถ้าเซฟในเครื่องแล้ว แต่ยังไม่ได้ Push ขึ้น GitHub:** จะขึ้นเตือนว่า:
+  ```text
+  Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+  ```
+
+**วิธีที่ 2: เช็คบนหน้าเว็บ GitHub โดยตรง (มั่นใจที่สุด 100%)**
+1. เปิดเบราว์เซอร์ไปที่: [https://github.com/wanchana1803-ai/vocabflow](https://github.com/wanchana1803-ai/vocabflow)
+2. สังเกตแถบด้านบนของตารางไฟล์ จะเห็นชื่อ Commit ล่าสุด เช่น:
+   `feat: add UK & US pronunciation system with 4-stage fallback...`
+3. สังเกตเวลาข้างๆ จะขึ้นว่า `X minutes ago`
+4. คลิกดูที่ปุ่ม **"commits"** เพื่อดูประวัติการเซฟทั้งหมดที่อยู่บนคลาวด์ได้ทันที
+
+---
+
 ## สรุปกฎสำคัญ
 1. **โค้ดที่ยังไม่ commit** = ย้อนกลับง่ายมากด้วย `git restore .`
 2. **Commit เมื่อทดสอบแล้วว่าเวิร์ก** = สร้างเป็น checkpoint บันทึกความก้าวหน้าในเครื่อง
