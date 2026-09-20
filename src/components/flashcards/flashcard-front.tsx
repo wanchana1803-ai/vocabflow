@@ -2,11 +2,12 @@
 
 import React from "react";
 import { VocabularyWord } from "@/types/vocabulary";
-import { VocabularyImage } from "@/components/images/vocabulary-image";
 import { PronunciationButton } from "@/components/audio/pronunciation-button";
 import { Badge } from "@/components/ui/badge";
-import { RotateCcw, Lock, Unlock } from "lucide-react";
+import { RotateCcw, Lock, Unlock, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+import { useLocalStorage } from "@/hooks/use-local-storage";
 
 interface FlashcardFrontProps {
   word: VocabularyWord;
@@ -18,28 +19,27 @@ interface FlashcardFrontProps {
 
 export function FlashcardFront({
   word,
-  nextImageUrl,
   onFlip,
   onToggleLock,
   className,
 }: FlashcardFrontProps) {
+  const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");
   const phoneticUk = word.phoneticUk || word.phonetic_uk;
   const phoneticUs = word.phoneticUs || word.phonetic_us;
   const audioUk = word.audioUkUrl || word.audio_uk_url;
   const audioUs = word.audioUsUrl || word.audio_us_url;
-  const imageUrl = word.imageUrl || word.image_url;
-  const imageAlt = word.imageAlt || word.image_alt;
   const partOfSpeech = word.partOfSpeech || word.part_of_speech || "word";
+  const cefrLevel = (word.cefrLevel || word.cefr_level || "B1").toUpperCase();
   const isLocked = Boolean(word.isLocked || word.is_locked);
 
   return (
     <div
       className={cn(
-        "flex h-full w-full flex-col justify-between rounded-3xl border border-border/80 bg-card p-5 md:p-6 shadow-xl transition-all",
+        "flex h-full w-full flex-col justify-between rounded-3xl border border-border/80 bg-card p-6 md:p-8 shadow-xl transition-all",
         className
       )}
     >
-      {/* Top Header: Part of Speech & Topic */}
+      {/* Top Header: Part of Speech, CEFR & Topic */}
       <div className="flex items-center justify-between gap-2 pb-2">
         <div className="flex items-center gap-2">
           <Badge
@@ -48,8 +48,14 @@ export function FlashcardFront({
           >
             {partOfSpeech}
           </Badge>
+          <Badge
+            variant="outline"
+            className="rounded-lg px-2 py-0.5 text-[11px] font-mono font-bold uppercase"
+          >
+            {cefrLevel}
+          </Badge>
           {word.topic && (
-            <span className="text-xs font-medium text-muted-foreground line-clamp-1">
+            <span className="hidden sm:inline-block text-xs font-medium text-muted-foreground line-clamp-1">
               {word.topic}
             </span>
           )}
@@ -105,41 +111,23 @@ export function FlashcardFront({
         </div>
       </div>
 
-      {/* Center Image: Large & Zero CLS */}
-      <div className="my-auto w-full py-2">
-        <VocabularyImage
-          imageUrl={imageUrl}
-          imageAlt={imageAlt || `Visual for ${word.word}`}
-          word={word.word}
-          partOfSpeech={partOfSpeech}
-          definition={word.definition || word.definition_en}
-          topic={word.topic}
-          creator={word.source || word.sourceName || word.source_name}
-          sourceName={word.source || word.sourceName || word.source_name}
-          license={word.license || word.sourceLicense || word.source_license}
-          nextImageUrl={nextImageUrl}
-          aspectRatio="card"
-          className="max-h-[260px] md:max-h-[300px] w-full shadow-inner"
-        />
-      </div>
-
-      {/* Bottom Area: Word, Phonetics & Audio Pronunciation */}
-      <div className="flex flex-col items-center justify-center pt-2 text-center">
+      {/* Center Area: Clean Minimal Typography */}
+      <div className="my-auto flex flex-col items-center justify-center text-center py-6">
         {/* Main Word */}
-        <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-foreground">
+        <h2 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-foreground select-text">
           {word.word}
         </h2>
 
         {/* Phonetic Transcriptions (UK & US) */}
         {(phoneticUk || phoneticUs) && (
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm text-muted-foreground font-mono">
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-sm sm:text-base text-muted-foreground font-mono">
             {phoneticUs && (
-              <span className="rounded bg-muted/60 px-1.5 py-0.5" title="US IPA">
+              <span className="rounded-lg bg-muted/60 px-2 py-0.5" title="US IPA">
                 🇺🇸 {phoneticUs}
               </span>
             )}
             {phoneticUk && phoneticUk !== phoneticUs && (
-              <span className="rounded bg-muted/60 px-1.5 py-0.5" title="UK IPA">
+              <span className="rounded-lg bg-muted/60 px-2 py-0.5" title="UK IPA">
                 🇬🇧 {phoneticUk}
               </span>
             )}
@@ -147,13 +135,14 @@ export function FlashcardFront({
         )}
 
         {/* Audio Pronunciation Buttons */}
-        <div className="mt-3 flex items-center justify-center gap-2 sm:gap-3">
+        <div className="mt-5 flex items-center justify-center gap-3 sm:gap-4">
           <PronunciationButton
             word={word.word}
             accent="US"
             audioUrl={audioUs}
             phonetic={phoneticUs}
             size="md"
+            isDefault={preferredAccent === "US"}
           />
           <PronunciationButton
             word={word.word}
@@ -161,8 +150,24 @@ export function FlashcardFront({
             audioUrl={audioUk}
             phonetic={phoneticUk}
             size="md"
+            isDefault={preferredAccent === "UK"}
           />
         </div>
+
+        {/* Topic Pill on Mobile */}
+        {word.topic && (
+          <div className="mt-6 sm:hidden">
+            <span className="rounded-full bg-secondary/80 px-3 py-1 text-xs text-secondary-foreground font-medium">
+              {word.topic}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Hint */}
+      <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground pt-3 border-t border-border/40">
+        <Sparkles className="h-3.5 w-3.5 text-primary/70" />
+        <span>คลิกหรือกด <kbd className="px-1.5 py-0.5 bg-muted rounded font-mono text-[10px]">Space</kbd> เพื่อดูความหมายและตัวอย่าง</span>
       </div>
     </div>
   );

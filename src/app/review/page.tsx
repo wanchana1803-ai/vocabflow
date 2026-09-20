@@ -13,6 +13,7 @@ import { SRSRating, UserWordProgress } from "@/types/srs";
 import { calculateNextSRSState, INITIAL_SRS_STATE } from "@/lib/srs/sm2";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { playPronunciation, stopAllAudio } from "@/lib/audio/speech";
 import confetti from "canvas-confetti";
 import {
   CheckCircle2,
@@ -32,11 +33,47 @@ export default function ReviewPage() {
   const router = useRouter();
   const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
   const [progress, setProgress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
+  const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");
+  const [autoPlayAudio] = useLocalStorage<boolean>("vocabflow_autoplay_audio", false);
+
+  const isMounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   const [queueIndex, setQueueIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [undoState, setUndoState] = useState<UndoState | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
+
+  // Auto-play audio when card opens if enabled in settings
+  React.useEffect(() => {
+    if (!isMounted || isCompleted || !autoPlayAudio || !vocab || vocab.length === 0) return;
+    const currentWord = vocab[queueIndex];
+    if (!currentWord) return;
+
+    const timer = setTimeout(() => {
+      const audioUrl = preferredAccent === "UK"
+        ? (currentWord.audioUkUrl || currentWord.audio_uk_url)
+        : (currentWord.audioUsUrl || currentWord.audio_us_url);
+
+      playPronunciation({
+        text: currentWord.word,
+        accent: preferredAccent,
+        audioUrl,
+      });
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [queueIndex, isMounted, isCompleted, autoPlayAudio, preferredAccent, vocab]);
+
+  // Clean up any ongoing audio when unmounting
+  React.useEffect(() => {
+    return () => {
+      stopAllAudio();
+    };
+  }, []);
 
   // Review queue: cards that are marked learned or due, or all words for practice
   const dueWords = useMemo(() => {
@@ -124,6 +161,16 @@ export default function ReviewPage() {
     onThree: () => handleRate("good"),
     onFour: () => handleRate("easy"),
   });
+
+  if (!isMounted) {
+    return (
+      <div className="container mx-auto max-w-md px-4 py-6 space-y-5 animate-pulse">
+        <div className="h-10 bg-muted/60 rounded-xl" />
+        <div className="h-2 bg-muted/60 rounded-full" />
+        <div className="h-[480px] bg-muted/60 rounded-3xl" />
+      </div>
+    );
+  }
 
   if (!vocab || vocab.length === 0) {
     return (

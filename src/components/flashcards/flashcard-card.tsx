@@ -3,10 +3,10 @@
 import React from "react";
 import { VocabularyWord } from "@/types/vocabulary";
 import { Badge } from "@/components/ui/badge";
-import { VocabImage } from "@/components/images/vocab-image";
 import { PronunciationButton } from "@/components/audio/pronunciation-button";
 import { RotateCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 
 interface FlashcardCardProps {
   word: VocabularyWord;
@@ -21,6 +21,13 @@ export function FlashcardCard({
   onFlip,
   className,
 }: FlashcardCardProps) {
+  const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");
+
+  const phoneticUs = word.phoneticUs || word.phonetic_us;
+  const phoneticUk = word.phoneticUk || word.phonetic_uk;
+  const audioUs = word.audioUsUrl || word.audio_us_url;
+  const audioUk = word.audioUkUrl || word.audio_uk_url;
+
   const getCefrVariant = (level: string) => {
     switch (level) {
       case "A1":
@@ -86,20 +93,9 @@ export function FlashcardCard({
             )}
           </div>
 
-          {/* Media image */}
-          <div className="my-3 w-full">
-            <VocabImage
-              imageUrl={word.imageUrl}
-              imageAlt={word.imageAlt}
-              word={word.word}
-              topic={word.topic}
-              aspectRatio="video"
-            />
-          </div>
-
           {/* Word and Pronunciation */}
-          <div className="text-center my-auto">
-            <h2 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+          <div className="text-center my-auto py-8">
+            <h2 className="text-4xl font-extrabold tracking-tight text-foreground sm:text-5xl">
               {word.word}
             </h2>
 
@@ -107,14 +103,16 @@ export function FlashcardCard({
               <PronunciationButton
                 word={word.word}
                 accent="US"
-                phonetic={word.phoneticUs}
-                audioUrl={word.audioUsUrl}
+                phonetic={phoneticUs}
+                audioUrl={audioUs}
+                isDefault={preferredAccent === "US"}
               />
               <PronunciationButton
                 word={word.word}
                 accent="UK"
-                phonetic={word.phoneticUk}
-                audioUrl={word.audioUkUrl}
+                phonetic={phoneticUk}
+                audioUrl={audioUk}
+                isDefault={preferredAccent === "UK"}
               />
             </div>
           </div>

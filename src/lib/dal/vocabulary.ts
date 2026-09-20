@@ -178,3 +178,30 @@ export async function updateVocabularyImage(
   }
 }
 
+/**
+ * Delete a vocabulary word by ID
+ */
+export async function deleteVocabulary(
+  id: string
+): Promise<{ success: boolean; error: string | null }> {
+  if (!isSupabaseConfigured()) {
+    // In local / guest mode, changes are tracked in LocalStorage
+    return { success: true, error: null };
+  }
+
+  try {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("vocabularies")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw error;
+    return { success: true, error: null };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to delete vocabulary from database",
+    };
+  }
+}

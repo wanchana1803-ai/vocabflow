@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Upload, ImageIcon, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Upload, BookOpen, ArrowLeft, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -19,10 +19,10 @@ export function AdminNav() {
       active: pathname.startsWith("/admin/import"),
     },
     {
-      href: "/admin/images",
-      label: "จัดการรูปภาพ (Images)",
-      icon: ImageIcon,
-      active: pathname.startsWith("/admin/images"),
+      href: "/vocabulary",
+      label: "จัดการคลังคำศัพท์ (Vocab)",
+      icon: BookOpen,
+      active: pathname.startsWith("/vocabulary"),
     },
   ];
 
@@ -45,7 +45,7 @@ export function AdminNav() {
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            เครื่องมือบริหารจัดการคลังคำศัพท์ รูปภาพ และระบบ Spaced Repetition
+            เครื่องมือบริหารจัดการคลังคำศัพท์และการนำเข้าข้อมูลคำศัพท์
           </p>
         </div>
       </div>

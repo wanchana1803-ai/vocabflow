@@ -150,3 +150,12 @@ test("Database Schema: CEFR levels strictly cover A1, A2, B1, B2", () => {
     assert.ok(allowed.has(word.cefr_level), `Invalid CEFR level ${word.cefr_level}`);
   }
 });
+
+test("Vocabulary Deletion: removes word from list correctly", () => {
+  const wordList = [...seedWords];
+  const targetId = wordList[0].id;
+  const filtered = wordList.filter((w) => w.id !== targetId);
+  assert.equal(filtered.length, seedWords.length - 1);
+  assert.ok(!filtered.some((w) => w.id === targetId));
+});
+

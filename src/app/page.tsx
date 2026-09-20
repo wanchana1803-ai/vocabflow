@@ -161,12 +161,22 @@ export default function HomePage() {
                   </div>
                   <span className="text-xs italic text-muted-foreground">{word.partOfSpeech}</span>
                 </div>
-                <PronunciationButton
-                  word={word.word}
-                  accent="US"
-                  size="sm"
-                  phonetic={word.phoneticUs}
-                />
+                <div className="flex items-center gap-1">
+                  <PronunciationButton
+                    word={word.word}
+                    accent="US"
+                    size="sm"
+                    audioUrl={word.audioUsUrl || word.audio_us_url}
+                    phonetic={word.phoneticUs || word.phonetic_us}
+                  />
+                  <PronunciationButton
+                    word={word.word}
+                    accent="UK"
+                    size="sm"
+                    audioUrl={word.audioUkUrl || word.audio_uk_url}
+                    phonetic={word.phoneticUk || word.phonetic_uk}
+                  />
+                </div>
               </CardHeader>
               <CardContent className="p-4 pt-1">
                 <p className="text-xs text-muted-foreground line-clamp-2">

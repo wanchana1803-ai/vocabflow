@@ -15,7 +15,7 @@ import { UserWordProgress, SRSRating } from "@/types/srs";
 import { calculateSM2, INITIAL_SRS_STATE } from "@/lib/srs/sm2";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
-import { getAutomaticImageForWord, OUTDATED_IMAGE_URLS } from "@/lib/images/auto-matcher";
+import { playPronunciation, stopAllAudio } from "@/lib/audio/speech";
 import confetti from "canvas-confetti";
 import {
   RotateCcw,
@@ -37,6 +37,8 @@ export default function LearnPage() {
     "vocabflow_progress",
     {}
   );
+  const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");
+  const [autoPlayAudio] = useLocalStorage<boolean>("vocabflow_autoplay_audio", false);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -49,43 +51,20 @@ export default function LearnPage() {
     () => false
   );
 
-  // Auto-heal missing or broken images for existing stored words
+  // Sanitize stored words to remove any cached images
   useEffect(() => {
     if (!isMounted || !vocab || vocab.length === 0) return;
 
-    let needsUpdate = false;
-    const updatedVocab = vocab.map((w) => {
-      const currentUrl = (w.imageUrl || w.image_url || "").trim();
-      const isMissing = !currentUrl;
-      const isOutdated = OUTDATED_IMAGE_URLS.has(currentUrl);
-
-      if (isMissing || isOutdated) {
-        needsUpdate = true;
-        const auto = getAutomaticImageForWord(
-          w.word,
-          w.partOfSpeech || w.part_of_speech,
-          w.topic,
-          w.definition || w.definition_en
-        );
-        return {
-          ...w,
-          imageUrl: auto.imageUrl,
-          image_url: auto.imageUrl,
-          imageAlt: auto.imageAlt,
-          image_alt: auto.imageAlt,
-          source: auto.sourceName,
-          sourceName: auto.sourceName,
-          source_name: auto.sourceName,
-          license: auto.sourceLicense,
-          sourceLicense: auto.sourceLicense,
-          source_license: auto.sourceLicense,
-        };
-      }
-      return w;
-    });
-
-    if (needsUpdate) {
-      setVocab(updatedVocab);
+    const hasImages = vocab.some((w) => Boolean(w.imageUrl || w.image_url));
+    if (hasImages) {
+      const sanitized = vocab.map((w) => ({
+        ...w,
+        imageUrl: "",
+        image_url: "",
+        imageAlt: "",
+        image_alt: "",
+      }));
+      setVocab(sanitized);
     }
   }, [isMounted, vocab, setVocab]);
 
@@ -105,6 +84,34 @@ export default function LearnPage() {
       isCompleted,
     };
   }, [currentIndex, isFlipped, vocab, isCompleted]);
+
+  // Auto-play audio when card opens if enabled in settings
+  useEffect(() => {
+    if (!isMounted || isCompleted || !autoPlayAudio || !vocab || vocab.length === 0) return;
+    const currentWord = vocab[currentIndex];
+    if (!currentWord) return;
+
+    const timer = setTimeout(() => {
+      const audioUrl = preferredAccent === "UK"
+        ? (currentWord.audioUkUrl || currentWord.audio_uk_url)
+        : (currentWord.audioUsUrl || currentWord.audio_us_url);
+
+      playPronunciation({
+        text: currentWord.word,
+        accent: preferredAccent,
+        audioUrl,
+      });
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [currentIndex, isMounted, isCompleted, autoPlayAudio, preferredAccent, vocab]);
+
+  // Clean up any ongoing audio when navigating away
+  useEffect(() => {
+    return () => {
+      stopAllAudio();
+    };
+  }, []);
 
   // Flip card
   const handleFlip = useCallback(() => {
@@ -359,9 +366,6 @@ export default function LearnPage() {
   const currentWord = vocab[currentIndex] || vocab[0];
   if (!currentWord) return null;
 
-  const nextWord = vocab[currentIndex + 1];
-  const nextImageUrl = nextWord?.imageUrl || nextWord?.image_url;
-
   return (
     <div className="container mx-auto max-w-xl px-4 py-6 md:py-8 flex flex-col gap-5 min-h-[calc(100vh-5rem)] justify-between">
       {/* 1. Session Progress Bar & Remaining Counter */}
@@ -376,7 +380,6 @@ export default function LearnPage() {
       <div className="flex-1 flex items-center justify-center my-auto w-full py-2">
         <Flashcard
           word={currentWord}
-          nextImageUrl={nextImageUrl}
           isFlipped={isFlipped}
           onFlip={handleFlip}
           onSwipeLeft={handleSkip}
