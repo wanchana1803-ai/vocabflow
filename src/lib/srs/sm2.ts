@@ -1,104 +1,204 @@
-import { ReviewLog, SRSConfig, SRSRating, SRSState, UserWordProgress } from "@/types/srs";
+import {
+  ReviewLog,
+  SRSRating,
+  SRSState,
+  UserWordProgress,
+  WordSRSStatus,
+  SRSMetrics,
+} from "@/types/srs";
+import { DEFAULT_SRS_CONFIG, SRSAlgorithmConfig } from "@/config/srs-config";
 
-export const DEFAULT_SRS_CONFIG: SRSConfig = {
-  initialEaseFactor: 2.5,
-  minEaseFactor: 1.3,
-  hardIntervalMultiplier: 1.2,
-  easyBonusMultiplier: 1.3,
-  againInterval: 1, // 1 day
-};
+export { DEFAULT_SRS_CONFIG };
+export type { SRSAlgorithmConfig };
 
+/**
+ * Initial empty SRS state for newly added words
+ */
 export const INITIAL_SRS_STATE: SRSState = {
   repetitions: 0,
   interval: 0,
+  interval_days: 0,
   easeFactor: DEFAULT_SRS_CONFIG.initialEaseFactor,
+  ease_factor: DEFAULT_SRS_CONFIG.initialEaseFactor,
   lapses: 0,
   lastReviewDate: null,
+  last_reviewed_at: null,
   nextReviewDate: new Date().toISOString(),
+  next_review_at: new Date().toISOString(),
+  lastRating: null,
+  last_rating: null,
+  status: "new",
 };
 
 /**
- * Calculates the next SRS state based on SM-2 algorithm principles.
- * Pure function: takes current state and rating, returns new state.
+ * Creates an initial progress record for a new word.
+ * Pure function: returns a fresh UserWordProgress object.
+ */
+export function createInitialSRSProgress(
+  wordId: string,
+  now: Date = new Date(),
+  config: SRSAlgorithmConfig = DEFAULT_SRS_CONFIG
+): UserWordProgress {
+  const nowIso = now.toISOString();
+  return {
+    wordId,
+    word_id: wordId,
+    isLearned: false,
+    is_learned: false,
+    status: "new",
+    repetitions: 0,
+    interval: 0,
+    interval_days: 0,
+    easeFactor: config.initialEaseFactor,
+    ease_factor: config.initialEaseFactor,
+    lapses: 0,
+    lastReviewDate: null,
+    last_reviewed_at: null,
+    nextReviewDate: nowIso,
+    next_review_at: nowIso,
+    lastRating: null,
+    last_rating: null,
+    history: [],
+  };
+}
+
+/**
+ * Calculates next SRS state using the Enhanced SM-2 algorithm.
+ * PURE FUNCTION: Does not mutate currentState, returns a new state object.
  */
 export function calculateNextSRSState(
   currentState: SRSState,
   rating: SRSRating,
   now: Date = new Date(),
-  config: SRSConfig = DEFAULT_SRS_CONFIG
+  config: SRSAlgorithmConfig = DEFAULT_SRS_CONFIG
 ): SRSState {
-  let { repetitions, interval, easeFactor, lapses } = currentState;
+  let repetitions = currentState.repetitions ?? 0;
+  let interval = currentState.interval ?? currentState.interval_days ?? 0;
+  let easeFactor = currentState.easeFactor ?? currentState.ease_factor ?? config.initialEaseFactor;
+  let lapses = currentState.lapses ?? 0;
 
   if (rating === "again") {
+    // Again: Short-term reset, increase lapse, penalty on ease factor
     repetitions = 0;
-    interval = config.againInterval;
+    interval = config.againIntervalDays;
     lapses += 1;
-    // Ease factor decreases on failure
-    easeFactor = Math.max(config.minEaseFactor, easeFactor - 0.2);
-  } else {
-    // Rating is hard, good, or easy
+    easeFactor = Math.max(config.minEaseFactor, easeFactor - config.againEasePenalty);
+  } else if (rating === "hard") {
+    // Hard: Moderate interval progression, slight ease penalty
     if (repetitions === 0) {
-      interval = rating === "hard" ? 1 : rating === "good" ? 1 : 2;
+      interval = config.hardFirstIntervalDays;
     } else if (repetitions === 1) {
-      interval = rating === "hard" ? 2 : rating === "good" ? 4 : 6;
+      interval = config.hardSecondIntervalDays;
     } else {
-      if (rating === "hard") {
-        interval = Math.max(1, Math.round(interval * config.hardIntervalMultiplier));
-        easeFactor = Math.max(config.minEaseFactor, easeFactor - 0.15);
-      } else if (rating === "good") {
-        interval = Math.max(1, Math.round(interval * easeFactor));
-      } else if (rating === "easy") {
-        interval = Math.max(1, Math.round(interval * easeFactor * config.easyBonusMultiplier));
-        easeFactor += 0.15;
-      }
+      interval = Math.max(1, Math.round(interval * config.hardIntervalMultiplier));
     }
     repetitions += 1;
+    easeFactor = Math.max(config.minEaseFactor, easeFactor - config.hardEasePenalty);
+  } else if (rating === "good") {
+    // Good: Standard SM-2 interval scaling, ease factor remains steady
+    if (repetitions === 0) {
+      interval = config.goodFirstIntervalDays;
+    } else if (repetitions === 1) {
+      interval = config.goodSecondIntervalDays;
+    } else {
+      interval = Math.max(1, Math.round(interval * easeFactor));
+    }
+    repetitions += 1;
+  } else if (rating === "easy") {
+    // Easy: Accelerated interval with bonus multiplier, ease factor bonus
+    if (repetitions === 0) {
+      interval = config.easyFirstIntervalDays;
+    } else if (repetitions === 1) {
+      interval = config.easySecondIntervalDays;
+    } else {
+      interval = Math.max(1, Math.round(interval * easeFactor * config.easyBonusMultiplier));
+    }
+    repetitions += 1;
+    easeFactor = Math.min(config.maxEaseFactor, easeFactor + config.easyEaseBonus);
   }
 
-  const nextReview = new Date(now);
-  nextReview.setDate(nextReview.getDate() + interval);
+  // Calculate next review timestamp
+  const nextReview = new Date(now.getTime() + interval * 24 * 60 * 60 * 1000);
+  const nextReviewIso = nextReview.toISOString();
+  const nowIso = now.toISOString();
+
+  // Determine lifecycle status
+  let status: WordSRSStatus = "review";
+  if (rating === "again") {
+    status = "learning";
+  } else if (
+    interval >= config.masteredIntervalThresholdDays &&
+    repetitions >= config.masteredRepetitionsThreshold
+  ) {
+    status = "mastered";
+  } else if (repetitions <= 1) {
+    status = "learning";
+  } else {
+    status = "review";
+  }
+
+  const roundedEase = Number(easeFactor.toFixed(2));
 
   return {
     repetitions,
     interval,
-    easeFactor: Number(easeFactor.toFixed(2)),
+    interval_days: interval,
+    easeFactor: roundedEase,
+    ease_factor: roundedEase,
     lapses,
-    lastReviewDate: now.toISOString(),
-    nextReviewDate: nextReview.toISOString(),
+    lastReviewDate: nowIso,
+    last_reviewed_at: nowIso,
+    nextReviewDate: nextReviewIso,
+    next_review_at: nextReviewIso,
+    lastRating: rating,
+    last_rating: rating,
+    status,
   };
 }
 
 /**
- * Checks if a card is due for review.
+ * Checks if a card is due for review at the given reference time.
+ * Pure function.
  */
-export function isCardDue(state: SRSState, currentDate: Date = new Date()): boolean {
-  if (!state.nextReviewDate) return true;
-  return new Date(state.nextReviewDate).getTime() <= currentDate.getTime();
+export function isCardDue(state: SRSState, referenceDate: Date = new Date()): boolean {
+  const nextDateStr = state.nextReviewDate || state.next_review_at;
+  if (!nextDateStr) return true;
+  return new Date(nextDateStr).getTime() <= referenceDate.getTime();
 }
 
 /**
  * Calculates SM-2 progression directly for UserWordProgress.
+ * Pure function: returns a new updated UserWordProgress with appended ReviewLog.
  */
 export function calculateSM2(
   current: UserWordProgress,
-  rating: SRSRating
+  rating: SRSRating,
+  now: Date = new Date(),
+  config: SRSAlgorithmConfig = DEFAULT_SRS_CONFIG
 ): UserWordProgress {
   const currentState: SRSState = {
     repetitions: current.repetitions ?? 0,
-    interval: current.interval ?? 0,
-    easeFactor: current.easeFactor ?? DEFAULT_SRS_CONFIG.initialEaseFactor,
+    interval: current.interval ?? current.interval_days ?? 0,
+    interval_days: current.interval_days ?? current.interval ?? 0,
+    easeFactor: current.easeFactor ?? current.ease_factor ?? config.initialEaseFactor,
+    ease_factor: current.ease_factor ?? current.easeFactor ?? config.initialEaseFactor,
     lapses: current.lapses ?? 0,
-    lastReviewDate: current.lastReviewDate ?? null,
-    nextReviewDate: current.nextReviewDate ?? new Date().toISOString(),
+    lastReviewDate: current.lastReviewDate ?? current.last_reviewed_at ?? null,
+    last_reviewed_at: current.last_reviewed_at ?? current.lastReviewDate ?? null,
+    nextReviewDate: current.nextReviewDate ?? current.next_review_at ?? now.toISOString(),
+    next_review_at: current.next_review_at ?? current.nextReviewDate ?? now.toISOString(),
+    lastRating: current.lastRating ?? current.last_rating ?? null,
+    last_rating: current.last_rating ?? current.lastRating ?? null,
+    status: current.status || "new",
   };
 
-  const nextState = calculateNextSRSState(currentState, rating);
+  const nextState = calculateNextSRSState(currentState, rating, now, config);
 
   const reviewLog: ReviewLog = {
-    id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    id: `log-${now.getTime()}-${Math.random().toString(36).substring(2, 7)}`,
     wordId: current.wordId,
     rating,
-    reviewedAt: new Date().toISOString(),
+    reviewedAt: now.toISOString(),
     intervalBefore: currentState.interval,
     intervalAfter: nextState.interval,
     easeFactorBefore: currentState.easeFactor,
@@ -109,13 +209,81 @@ export function calculateSM2(
     ...current,
     ...nextState,
     isLearned: true,
-    status:
-      nextState.interval >= 21
-        ? "mastered"
-        : nextState.repetitions > 0
-        ? "reviewing"
-        : "learning",
+    is_learned: true,
     history: [...(current.history || []), reviewLog],
   };
 }
 
+/**
+ * Computes SRS metrics: Due Today, New, Learning, Review, Mastered.
+ * Pure function.
+ */
+export function calculateSRSMetrics(
+  vocabList: { id: string }[],
+  progressMap: Record<string, UserWordProgress>,
+  referenceDate: Date = new Date()
+): SRSMetrics {
+  const totalWords = vocabList.length;
+  let dueToday = 0;
+  let newCount = 0;
+  let learningCount = 0;
+  let reviewCount = 0;
+  let masteredCount = 0;
+
+  // Set reference to end of today to include all items due today
+  const endOfToday = new Date(referenceDate);
+  endOfToday.setHours(23, 59, 59, 999);
+  const endOfTodayMs = endOfToday.getTime();
+
+  for (const word of vocabList) {
+    const p = progressMap[word.id];
+    if (!p || !p.isLearned || p.status === "new") {
+      newCount += 1;
+      continue;
+    }
+
+    if (p.status === "mastered") {
+      masteredCount += 1;
+    } else if (p.status === "learning") {
+      learningCount += 1;
+    } else {
+      reviewCount += 1;
+    }
+
+    const nextTimeStr = p.nextReviewDate || p.next_review_at;
+    if (nextTimeStr && new Date(nextTimeStr).getTime() <= endOfTodayMs) {
+      dueToday += 1;
+    }
+  }
+
+  return {
+    dueToday,
+    newCount,
+    learningCount,
+    reviewCount,
+    masteredCount,
+    totalWords,
+  };
+}
+
+/**
+ * Resolves current time:
+ * If logged in (or server available), syncs with /api/time.
+ * In guest mode (or offline), uses device time.
+ */
+export async function resolveCurrentTime(isLoggedIn: boolean = false): Promise<Date> {
+  if (isLoggedIn && typeof window !== "undefined") {
+    try {
+      const response = await fetch("/api/time", { method: "GET" });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.serverTime) {
+          return new Date(data.serverTime);
+        }
+      }
+    } catch {
+      // Graceful fallback to device time on network failure
+    }
+  }
+  return new Date();
+}

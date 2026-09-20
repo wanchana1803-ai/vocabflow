@@ -19,6 +19,12 @@ import {
 const CEFR_LEVELS: CEFRLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
 export default function ProgressPage() {
+  const isMounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+
   const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
   const [progress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
 
@@ -44,6 +50,19 @@ export default function ProgressPage() {
     .flatMap((p) => p.history || [])
     .sort((a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime())
     .slice(0, 5);
+
+  if (!isMounted) {
+    return (
+      <div className="container mx-auto max-w-4xl px-4 py-6 space-y-6 animate-pulse">
+        <div className="h-10 bg-muted/60 rounded-xl w-1/3" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="h-32 bg-muted/50 rounded-3xl" />
+          <div className="h-32 bg-muted/50 rounded-3xl" />
+          <div className="h-32 bg-muted/50 rounded-3xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-6 space-y-6">

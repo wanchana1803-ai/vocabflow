@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord } from "@/types/vocabulary";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { UserWordProgress } from "@/types/srs";
+import { calculateSRSMetrics } from "@/lib/srs/sm2";
 import {
   Sparkles,
   Repeat,
@@ -23,10 +24,17 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
+  const isMounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+
   const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
   const [progress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
 
   const greeting = (() => {
+    if (!isMounted) return "Hello";
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
@@ -34,20 +42,40 @@ export default function HomePage() {
   })();
 
   const totalWords = vocab.length;
-  const progressList = Object.values(progress);
-  const learnedCount = progressList.filter((p) => p.isLearned).length;
-
-  // Words due for SRS review
-  const now = new Date().getTime();
-  const dueCount = progressList.filter(
-    (p) => p.isLearned && new Date(p.nextReviewDate).getTime() <= now
-  ).length;
+  const metrics = React.useMemo(() => {
+    return calculateSRSMetrics(vocab, progress);
+  }, [vocab, progress]);
 
   const dailyGoal = 10;
-  const todayReviewedCount = Math.min(dailyGoal, Math.max(2, learnedCount));
+  const todayReviewedCount = Math.min(
+    dailyGoal,
+    Math.max(0, metrics.learningCount + metrics.reviewCount + metrics.masteredCount)
+  );
+
+  if (!isMounted) {
+    return (
+      <div className="container mx-auto max-w-4xl px-4 py-6 space-y-8 animate-pulse">
+        {/* Banner Skeleton */}
+        <div className="rounded-3xl bg-muted/50 border border-border/40 p-6 md:p-8 h-64" />
+        {/* Metric Cards Skeleton */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+          <div className="rounded-2xl bg-muted/40 h-24 border border-border/40" />
+          <div className="rounded-2xl bg-muted/40 h-24 border border-border/40" />
+          <div className="rounded-2xl bg-muted/40 h-24 border border-border/40" />
+          <div className="rounded-2xl bg-muted/40 h-24 border border-border/40" />
+        </div>
+        {/* Featured Cards Skeleton */}
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+          <div className="rounded-2xl bg-muted/30 h-36 border border-border/30" />
+          <div className="rounded-2xl bg-muted/30 h-36 border border-border/30" />
+          <div className="rounded-2xl bg-muted/30 h-36 border border-border/30" />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-6 space-y-8">
+    <div className="container mx-auto max-w-4xl px-4 py-6 space-y-8 animate-in fade-in-50 duration-200">
       {/* Hero / Greeting Banner */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/15 via-secondary to-background border border-primary/20 p-6 md:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -56,7 +84,7 @@ export default function HomePage() {
               <Sparkles className="h-3.5 w-3.5" />
               <span>Personalized SRS Learning</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground">
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-foreground" suppressHydrationWarning>
               {greeting}, ready to build your vocabulary?
             </h1>
             <p className="text-sm md:text-base text-muted-foreground max-w-lg">
@@ -66,15 +94,15 @@ export default function HomePage() {
 
           <div className="flex w-full md:w-auto flex-col sm:flex-row gap-3">
             <Link href="/review" className="w-full sm:w-auto">
-              <Button size="lg" className="w-full rounded-2xl gap-2 shadow-md shadow-primary/25">
+              <Button size="lg" className="w-full rounded-2xl gap-2 shadow-md shadow-primary/25 cursor-pointer">
                 <Repeat className="h-5 w-5" />
-                <span>Review Due ({dueCount || 3})</span>
+                <span suppressHydrationWarning>Review Due ({metrics.dueToday})</span>
               </Button>
             </Link>
             <Link href="/learn" className="w-full sm:w-auto">
-              <Button size="lg" variant="secondary" className="w-full rounded-2xl gap-2">
+              <Button size="lg" variant="secondary" className="w-full rounded-2xl gap-2 cursor-pointer">
                 <Sparkles className="h-5 w-5" />
-                <span>Learn New</span>
+                <span suppressHydrationWarning>Learn New ({metrics.newCount})</span>
               </Button>
             </Link>
           </div>
@@ -87,7 +115,7 @@ export default function HomePage() {
               <TrendingUp className="h-4 w-4 text-primary" />
               Daily Study Goal
             </span>
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" suppressHydrationWarning>
               <strong className="text-foreground">{todayReviewedCount}</strong> / {dailyGoal} words
             </span>
           </div>
@@ -99,18 +127,22 @@ export default function HomePage() {
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
         <Card className="rounded-2xl border-border/80 p-4">
           <div className="flex items-center justify-between text-muted-foreground mb-2">
-            <span className="text-xs font-medium">Daily Streak</span>
-            <Flame className="h-4 w-4 text-amber-500 fill-amber-500" />
+            <span className="text-xs font-medium">Due for Review</span>
+            <Clock className="h-4 w-4 text-rose-500" />
           </div>
-          <p className="text-2xl font-bold text-foreground">3 <span className="text-xs font-normal text-muted-foreground">Days</span></p>
+          <p className="text-2xl font-bold text-foreground font-mono" suppressHydrationWarning>
+            {metrics.dueToday} <span className="text-xs font-normal text-muted-foreground">Cards</span>
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-border/80 p-4">
           <div className="flex items-center justify-between text-muted-foreground mb-2">
-            <span className="text-xs font-medium">Due for Review</span>
-            <Clock className="h-4 w-4 text-primary" />
+            <span className="text-xs font-medium">New Words</span>
+            <BookOpen className="h-4 w-4 text-blue-500" />
           </div>
-          <p className="text-2xl font-bold text-foreground">{dueCount || 3} <span className="text-xs font-normal text-muted-foreground">Cards</span></p>
+          <p className="text-2xl font-bold text-foreground font-mono" suppressHydrationWarning>
+            {metrics.newCount} <span className="text-xs font-normal text-muted-foreground">Words</span>
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-border/80 p-4">
@@ -118,15 +150,19 @@ export default function HomePage() {
             <span className="text-xs font-medium">Mastered</span>
             <Award className="h-4 w-4 text-emerald-500" />
           </div>
-          <p className="text-2xl font-bold text-foreground" suppressHydrationWarning>{learnedCount || 0} <span className="text-xs font-normal text-muted-foreground">Words</span></p>
+          <p className="text-2xl font-bold text-foreground font-mono" suppressHydrationWarning>
+            {metrics.masteredCount} <span className="text-xs font-normal text-muted-foreground">Words</span>
+          </p>
         </Card>
 
         <Card className="rounded-2xl border-border/80 p-4">
           <div className="flex items-center justify-between text-muted-foreground mb-2">
             <span className="text-xs font-medium">Total Library</span>
-            <BookOpen className="h-4 w-4 text-teal-600" />
+            <Flame className="h-4 w-4 text-amber-500" />
           </div>
-          <p className="text-2xl font-bold text-foreground" suppressHydrationWarning>{totalWords} <span className="text-xs font-normal text-muted-foreground">Words</span></p>
+          <p className="text-2xl font-bold text-foreground font-mono" suppressHydrationWarning>
+            {totalWords} <span className="text-xs font-normal text-muted-foreground">Words</span>
+          </p>
         </Card>
       </section>
 

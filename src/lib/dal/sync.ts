@@ -32,6 +32,7 @@ export async function syncGuestProgressToAccount(
   for (const [vocabId, progress] of progressEntries) {
     const { success, error } = await upsertWordProgress(userId, vocabId, {
       isLearned: progress.isLearned,
+      status: progress.status || "learning",
       repetitions: progress.repetitions,
       interval: progress.interval,
       easeFactor: progress.easeFactor,
