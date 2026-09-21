@@ -3,29 +3,38 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Sparkles, Repeat, BookA, BarChart3, Settings } from "lucide-react";
+import { Home, Sparkles, Repeat, BookA, BarChart3, User as UserIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/learn", label: "Learn", icon: Sparkles },
   { href: "/review", label: "Review", icon: Repeat },
   { href: "/vocabulary", label: "Vocab", icon: BookA },
   { href: "/progress", label: "Progress", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
+  const { isAuthenticated } = useAuth();
+
+  const accountHref = isAuthenticated ? "/account" : "/login";
+  const accountLabel = isAuthenticated ? "Account" : "Login";
+
+  const navItems = [
+    ...BASE_NAV_ITEMS,
+    { href: accountHref, label: accountLabel, icon: UserIcon },
+  ];
 
   return (
     <nav
       aria-label="Mobile Navigation"
       className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-border/80 bg-background/95 px-2 backdrop-blur-md md:hidden"
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const Icon = item.icon;
-        const isActive = pathname === item.href;
+        const isActive = pathname === item.href || (item.href === "/account" && pathname.startsWith("/account"));
 
         return (
           <Link

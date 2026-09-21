@@ -86,6 +86,7 @@ export interface Database {
           email: string | null;
           display_name: string | null;
           avatar_url: string | null;
+          role: "user" | "admin";
           created_at: string;
           updated_at: string;
         };
@@ -94,6 +95,7 @@ export interface Database {
           email?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
+          role?: "user" | "admin";
           created_at?: string;
           updated_at?: string;
         };
@@ -102,6 +104,7 @@ export interface Database {
           email?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
+          role?: "user" | "admin";
           updated_at?: string;
         };
         Relationships: [];
@@ -248,6 +251,60 @@ export interface Database {
           duration_seconds?: number | null;
           started_at?: string;
           ended_at?: string | null;
+        };
+        Relationships: [];
+      };
+      bookmarks: {
+        Row: {
+          id: string;
+          user_id: string;
+          vocabulary_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          vocabulary_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          vocabulary_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      admin_audit_logs: {
+        Row: {
+          id: string;
+          admin_user_id: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          before_data: Json | null;
+          after_data: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          admin_user_id?: string | null;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          before_data?: Json | null;
+          after_data?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          admin_user_id?: string | null;
+          action?: string;
+          entity_type?: string;
+          entity_id?: string | null;
+          before_data?: Json | null;
+          after_data?: Json | null;
+          created_at?: string;
         };
         Relationships: [];
       };

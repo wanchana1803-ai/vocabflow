@@ -49,7 +49,9 @@
 | 5 | **Progress** | [http://localhost:3000/progress](http://localhost:3000/progress) | แดชบอร์ดสถิติ อัตรา Retention, การจดจำตามระดับ CEFR, ประวัติ Log การทบทวน |
 | 6 | **Settings** | [http://localhost:3000/settings](http://localhost:3000/settings) | สลับธีม Light / Dark / System, เลือกสำเนียงเสียงหลัก (US/UK), Export ข้อมูลเป็น JSON |
 | 7 | **Admin Import** | [http://localhost:3000/admin/import](http://localhost:3000/admin/import) | ระบบนำเข้าคำศัพท์ขั้นสูง 4 ขั้นตอน: Drag & drop, Template download, Auto column mapping, Zod validation, Error diagnostics, ตรวจคำซ้ำ (Skip/Update/Merge), Chunked batch import *(รหัสผ่าน: `admin123`)* |
-| 8 | **Admin Images** | [http://localhost:3000/admin/images](http://localhost:3000/admin/images) | **[NEW - Prompt 5]** ระบบบริหารจัดการรูปภาพคำศัพท์: ค้นหารูปทางเลือกจาก Provider/Curated Library, ระบุ Custom Direct Image URL, ป้ายสถานะรูปภาพ (DB/Curated/Provider/Placeholder), อนุมัติรูปภาพ, รีเซ็ต และดึงรูปภาพให้อัตโนมัติทั้งชุด (Batch Auto-Fetch) พร้อม Progress Bar |
+| 8 | **Admin Images** | [http://localhost:3000/admin/images](http://localhost:3000/admin/images) | ระบบบริหารจัดการรูปภาพคำศัพท์: ค้นหารูปทางเลือกจาก Provider/Curated Library, ระบุ Custom Direct Image URL, ป้ายสถานะรูปภาพ, อนุมัติรูปภาพ, รีเซ็ต |
+| 9 | **Login** | [http://localhost:3000/login](http://localhost:3000/login) | หน้าเข้าสู่ระบบ พร้อมปุ่ม 1-Click Demo (Admin/User), รองรับการสลับบัญชีและตรวจสอบสถานะแบบเรียลไทม์ |
+| 10 | **Register** | [http://localhost:3000/register](http://localhost:3000/register) | หน้าลงทะเบียนสมาชิกใหม่ พร้อมระบบตรวจสอบรหัสผ่านและสร้าง session ให้อัตโนมัติ |
 
 ---
 

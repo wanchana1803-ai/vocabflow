@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Upload, BookOpen, ArrowLeft, ShieldCheck } from "lucide-react";
+import { Upload, BookOpen, ArrowLeft, ShieldCheck, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -13,16 +13,22 @@ export function AdminNav() {
 
   const navItems = [
     {
+      href: "/admin/vocabulary",
+      label: "จัดการคำศัพท์ (Vocabulary)",
+      icon: BookOpen,
+      active: pathname === "/admin" || pathname.startsWith("/admin/vocabulary"),
+    },
+    {
       href: "/admin/import",
-      label: "นำเข้าคำศัพท์ (Import)",
+      label: "นำเข้าคำศัพท์ (Batch Import)",
       icon: Upload,
       active: pathname.startsWith("/admin/import"),
     },
     {
-      href: "/vocabulary",
-      label: "จัดการคลังคำศัพท์ (Vocab)",
-      icon: BookOpen,
-      active: pathname.startsWith("/vocabulary"),
+      href: "/admin/images",
+      label: "จัดการรูปภาพ (Images)",
+      icon: ImageIcon,
+      active: pathname.startsWith("/admin/images"),
     },
   ];
 

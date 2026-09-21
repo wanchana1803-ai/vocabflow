@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Volume2, Loader2, AlertCircle } from "lucide-react";
-import { playPronunciation, stopAllAudio, AccentType } from "@/lib/audio/speech";
+import { playPronunciation, AccentType } from "@/lib/audio/speech";
 import { cn } from "@/lib/utils";
 
 interface PronunciationButtonProps {

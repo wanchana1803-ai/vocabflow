@@ -1,457 +1,546 @@
 "use client";
 
-import React, { useState, useMemo, useSyncExternalStore } from "react";
+import React, { useState, useMemo, useSyncExternalStore, useEffect, Suspense } from "react";
+import { useSearchParams, usePathname } from "next/navigation";
 import Link from "next/link";
-import { VocabularyWord, CEFRLevel } from "@/types/vocabulary";
+import { VocabularyWord, CEFRLevel, PartOfSpeech } from "@/types/vocabulary";
+import { UserWordProgress, WordSRSStatus } from "@/types/srs";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { PronunciationButton } from "@/components/audio/pronunciation-button";
 import { EmptyState } from "@/components/feedback/empty-state";
-import { parseVocabularyCsv, parseVocabularyJson, ImportResult } from "@/features/import/importer";
-import { deleteVocabulary } from "@/lib/dal/vocabulary";
+import { isCardDue } from "@/lib/srs/sm2";
 import {
   Search,
-  Upload,
   BookA,
-  FileCode,
-  FileSpreadsheet,
   X,
-  Check,
-  AlertCircle,
-  RotateCcw,
-  Shield,
   ShieldCheck,
+  Star,
+  LayoutGrid,
+  List,
+  ChevronLeft,
+  ChevronRight,
   Lock,
-  Unlock,
-  Trash2,
-  AlertTriangle,
-  KeyRound,
 } from "lucide-react";
 
 const CEFR_TABS: (CEFRLevel | "ALL")[] = ["ALL", "A1", "A2", "B1", "B2", "C1", "C2"];
 
+const PART_OF_SPEECH_LIST: { value: PartOfSpeech | "ALL"; label: string }[] = [
+  { value: "ALL", label: "All Types" },
+  { value: "noun", label: "Noun" },
+  { value: "verb", label: "Verb" },
+  { value: "adjective", label: "Adjective" },
+  { value: "adverb", label: "Adverb" },
+  { value: "preposition", label: "Preposition" },
+  { value: "conjunction", label: "Conjunction" },
+  { value: "idiom", label: "Idiom" },
+  { value: "phrase", label: "Phrase" },
+];
+
+const CEFR_GRADIENTS: Record<string, string> = {
+  A1: "from-emerald-500/20 to-emerald-600/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+  A2: "from-teal-500/20 to-teal-600/10 text-teal-700 dark:text-teal-400 border-teal-500/30",
+  B1: "from-blue-500/20 to-blue-600/10 text-blue-700 dark:text-blue-400 border-blue-500/30",
+  B2: "from-indigo-500/20 to-indigo-600/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/30",
+  C1: "from-purple-500/20 to-purple-600/10 text-purple-700 dark:text-purple-400 border-purple-500/30",
+  C2: "from-rose-500/20 to-rose-600/10 text-rose-700 dark:text-rose-400 border-rose-500/30",
+};
+
 export default function VocabularyPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto max-w-6xl px-4 py-8 animate-pulse space-y-6">
+          <div className="h-10 bg-muted/60 rounded-2xl w-48" />
+          <div className="h-14 bg-muted/40 rounded-2xl" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="h-44 bg-muted/30 rounded-3xl" />
+            <div className="h-44 bg-muted/30 rounded-3xl" />
+            <div className="h-44 bg-muted/30 rounded-3xl" />
+          </div>
+        </div>
+      }
+    >
+      <VocabularyContent />
+    </Suspense>
+  );
+}
+
+function VocabularyContent() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const isMounted = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   );
 
-  const [vocab, setVocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
-  const [search, setSearch] = useState("");
-  const [selectedCefr, setSelectedCefr] = useState<CEFRLevel | "ALL">("ALL");
-  const [filterLockedOnly, setFilterLockedOnly] = useState(false);
+  const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const [progress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
+  const [bookmarks, setBookmarks] = useLocalStorage<string[]>("vocabflow_bookmarks", []);
+  const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");
+  const [showThai] = useLocalStorage<boolean>("vocabflow_show_thai", true);
 
-  // Admin & Delete State
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      return window.sessionStorage.getItem("vocabflow_admin_unlocked") === "true";
-    } catch {
-      return false;
-    }
-  });
-  const [wordToDelete, setWordToDelete] = useState<VocabularyWord | null>(null);
-  const [adminPasscodeInput, setAdminPasscodeInput] = useState("");
-  const [passcodeError, setPasscodeError] = useState("");
-  const [deleteToast, setDeleteToast] = useState<string | null>(null);
 
-  // Header Admin Unlock Modal State
-  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const [headerAdminInput, setHeaderAdminInput] = useState("");
-  const [headerAdminError, setHeaderAdminError] = useState("");
+  // Read URL params or fallback to defaults
+  const initialSearch = searchParams.get("q") || "";
+  const initialCefr = (searchParams.get("cefr") as CEFRLevel | "ALL") || "ALL";
+  const initialPos = (searchParams.get("pos") as PartOfSpeech | "ALL") || "ALL";
+  const initialTopic = searchParams.get("topic") || "ALL";
+  const initialStatus = searchParams.get("status") || "ALL";
+  const initialSort = searchParams.get("sort") || "latest";
+  const initialView = (searchParams.get("view") as "grid" | "list") || "grid";
+  const initialPage = parseInt(searchParams.get("page") || "1", 10);
 
-  // Count of locked words
-  const lockedCount = useMemo(() => {
-    return vocab.filter((w) => Boolean(w.isLocked || w.is_locked)).length;
+  // Search, Filter & View States
+  const [search, setSearch] = useState(initialSearch);
+  const [selectedCefr, setSelectedCefr] = useState<CEFRLevel | "ALL">(initialCefr);
+  const [selectedPos, setSelectedPos] = useState<PartOfSpeech | "ALL">(initialPos);
+  const [selectedTopic, setSelectedTopic] = useState<string>(initialTopic);
+  const [selectedStatus, setSelectedStatus] = useState<string>(initialStatus);
+  const [sortOrder, setSortOrder] = useState<string>(initialSort);
+  const [viewMode, setViewMode] = useState<"grid" | "list">(initialView);
+  const [currentPage, setCurrentPage] = useState<number>(initialPage);
+  const [pageSize, setPageSize] = useState<number>(24);
+
+  // Word Details Modal State
+  const [selectedWordForDetails, setSelectedWordForDetails] = useState<VocabularyWord | null>(null);
+  const { isAdmin } = useAuth();
+
+  // Sync state changes with URL query parameters
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
+    if (selectedCefr !== "ALL") params.set("cefr", selectedCefr);
+    if (selectedPos !== "ALL") params.set("pos", selectedPos);
+    if (selectedTopic !== "ALL") params.set("topic", selectedTopic);
+    if (selectedStatus !== "ALL") params.set("status", selectedStatus);
+    if (sortOrder !== "latest") params.set("sort", sortOrder);
+    if (viewMode !== "grid") params.set("view", viewMode);
+    if (currentPage > 1) params.set("page", currentPage.toString());
+
+    const queryString = params.toString();
+    const newUrl = queryString ? `${pathname}?${queryString}` : pathname;
+    window.history.replaceState(null, "", newUrl);
+  }, [
+    isMounted,
+    pathname,
+    search,
+    selectedCefr,
+    selectedPos,
+    selectedTopic,
+    selectedStatus,
+    sortOrder,
+    viewMode,
+    currentPage,
+  ]);
+
+  // Extract unique topics from vocabulary
+  const availableTopics = useMemo(() => {
+    const topicsSet = new Set<string>();
+    vocab.forEach((w) => {
+      if (w.topic && w.topic.trim()) topicsSet.add(w.topic.trim());
+    });
+    return Array.from(topicsSet).sort();
   }, [vocab]);
 
-  // Toggle lock status for a word
-  const handleToggleLock = (wordId: string) => {
-    setVocab((prev) =>
-      prev.map((w) => {
-        if (w.id === wordId) {
-          const isCurrentlyLocked = Boolean(w.isLocked || w.is_locked);
-          return {
-            ...w,
-            isLocked: !isCurrentlyLocked,
-            is_locked: !isCurrentlyLocked,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return w;
-      })
+  // Toggle bookmark
+  const handleToggleBookmark = (wordId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setBookmarks((prev) =>
+      prev.includes(wordId) ? prev.filter((id) => id !== wordId) : [...prev, wordId]
     );
   };
 
-  // Import Modal State
-  const [isImportOpen, setIsImportOpen] = useState(false);
-  const [importType, setImportType] = useState<"json" | "csv">("json");
-  const [importText, setImportText] = useState("");
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  // Filter and sort vocabulary
+  const filteredAndSortedWords = useMemo(() => {
+    const now = new Date();
 
-  // Filter words
-  const filteredWords = useMemo(() => {
-    return vocab.filter((w) => {
-      const isWordLocked = Boolean(w.isLocked || w.is_locked);
-      if (filterLockedOnly && !isWordLocked) return false;
+    const filtered = vocab.filter((w) => {
+      const isBookmarked = bookmarks.includes(w.id);
+      const p = progress[w.id];
+      const wordStatus: WordSRSStatus = p?.status || (p?.isLearned ? "learning" : "new");
 
-      const matchSearch =
-        !search ||
-        w.word.toLowerCase().includes(search.toLowerCase()) ||
-        w.definition.toLowerCase().includes(search.toLowerCase()) ||
-        w.translation?.toLowerCase().includes(search.toLowerCase()) ||
-        w.topic?.toLowerCase().includes(search.toLowerCase());
+      // 1. Status Filter
+      if (selectedStatus === "bookmarked" && !isBookmarked) return false;
+      if (selectedStatus === "locked" && !w.isLocked && !w.is_locked) return false;
+      if (selectedStatus === "due" && (!p || !p.isLearned || !isCardDue(p, now))) return false;
+      if (
+        selectedStatus !== "ALL" &&
+        selectedStatus !== "bookmarked" &&
+        selectedStatus !== "locked" &&
+        selectedStatus !== "due" &&
+        wordStatus !== selectedStatus
+      ) {
+        return false;
+      }
 
-      const matchCefr = selectedCefr === "ALL" || w.cefrLevel === selectedCefr;
+      // 2. CEFR Filter
+      if (selectedCefr !== "ALL" && w.cefrLevel !== selectedCefr) return false;
 
-      return matchSearch && matchCefr;
+      // 3. Part of Speech Filter
+      const pos = w.partOfSpeech || w.part_of_speech;
+      if (selectedPos !== "ALL" && pos?.toLowerCase() !== selectedPos.toLowerCase()) {
+        return false;
+      }
+
+      // 4. Topic Filter
+      if (selectedTopic !== "ALL" && w.topic !== selectedTopic) return false;
+
+      // 5. Search Filter (word, definition, translation, topic, tags)
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        const matchWord = w.word.toLowerCase().includes(q);
+        const matchDef = (w.definition || w.definitionEn || w.definition_en || "").toLowerCase().includes(q);
+        const matchTrans = (w.translation || w.definitionTh || w.definition_th || "").toLowerCase().includes(q);
+        const matchTopic = (w.topic || "").toLowerCase().includes(q);
+        const matchTags = Array.isArray(w.tags) && w.tags.some((t) => t.toLowerCase().includes(q));
+
+        if (!matchWord && !matchDef && !matchTrans && !matchTopic && !matchTags) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [vocab, search, selectedCefr, filterLockedOnly]);
 
-  const handleTestImport = () => {
-    if (!importText.trim()) return;
-    if (importType === "json") {
-      setImportResult(parseVocabularyJson(importText));
-    } else {
-      setImportResult(parseVocabularyCsv(importText));
-    }
-  };
-
-  const handleApplyImport = () => {
-    if (!importResult || importResult.words.length === 0) return;
-    // Merge without duplicate words (case-insensitive)
-    const existingWords = new Set(vocab.map((v) => v.word.toLowerCase().trim()));
-    const newUniqueWords = importResult.words.filter(
-      (w) => !existingWords.has(w.word.toLowerCase().trim())
-    );
-
-    setVocab([...newUniqueWords, ...vocab]);
-    setIsImportOpen(false);
-    setImportText("");
-    setImportResult(null);
-  };
-
-  const handleResetToDefault = () => {
-    if (confirm("Reset word list back to the default curated set?")) {
-      setVocab(INITIAL_VOCABULARY);
-    }
-  };
-
-  const handleRequestDelete = (word: VocabularyWord) => {
-    setWordToDelete(word);
-    setPasscodeError("");
-    setAdminPasscodeInput("");
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!wordToDelete) return;
-
-    if (!isAdminUnlocked) {
-      const p = adminPasscodeInput.trim();
-      if (p === "admin123" || p === "vocabflow-admin") {
-        setIsAdminUnlocked(true);
-        try {
-          window.sessionStorage.setItem("vocabflow_admin_unlocked", "true");
-        } catch {
-          // ignore
-        }
-      } else {
-        setPasscodeError("รหัสผ่าน Admin ไม่ถูกต้อง (ทดลองใช้: admin123)");
-        return;
+    // Sort order
+    return filtered.sort((a, b) => {
+      if (sortOrder === "alphabetical-asc") {
+        return a.word.localeCompare(b.word);
       }
-    }
-
-    const wordName = wordToDelete.word;
-    const wordId = wordToDelete.id;
-
-    // 1. Remove from vocabulary list
-    setVocab((prev) => prev.filter((w) => w.id !== wordId));
-
-    // 2. Remove from progress storage if exists
-    try {
-      const rawProgress = window.localStorage.getItem("vocabflow_progress");
-      if (rawProgress) {
-        const progressMap = JSON.parse(rawProgress);
-        if (progressMap[wordId]) {
-          delete progressMap[wordId];
-          window.localStorage.setItem("vocabflow_progress", JSON.stringify(progressMap));
-        }
+      if (sortOrder === "alphabetical-desc") {
+        return b.word.localeCompare(a.word);
       }
-    } catch {
-      // ignore
-    }
-
-    // 3. Call DAL delete
-    await deleteVocabulary(wordId);
-
-    // 4. Close dialog and notify
-    setWordToDelete(null);
-    setAdminPasscodeInput("");
-    setDeleteToast(`ลบคำศัพท์ "${wordName}" ออกจากคลังเรียบร้อยแล้ว`);
-    setTimeout(() => setDeleteToast(null), 4000);
-  };
-
-  const handleHeaderAdminUnlock = (e: React.FormEvent) => {
-    e.preventDefault();
-    const p = headerAdminInput.trim();
-    if (p === "admin123" || p === "vocabflow-admin") {
-      setIsAdminUnlocked(true);
-      try {
-        window.sessionStorage.setItem("vocabflow_admin_unlocked", "true");
-      } catch {
-        // ignore
+      if (sortOrder === "cefr-asc") {
+        return a.cefrLevel.localeCompare(b.cefrLevel);
       }
-      setIsAdminModalOpen(false);
-      setHeaderAdminInput("");
-      setHeaderAdminError("");
-      setDeleteToast("ปลดล็อคสิทธิ์แอดมินสำเร็จ! ตอนนี้คุณสามารถกดยืนยันลบคำศัพท์ได้ทันที");
-      setTimeout(() => setDeleteToast(null), 4000);
-    } else {
-      setHeaderAdminError("รหัสผ่านไม่ถูกต้อง (ทดลองใช้: admin123)");
-    }
-  };
+      if (sortOrder === "cefr-desc") {
+        return b.cefrLevel.localeCompare(a.cefrLevel);
+      }
+      if (sortOrder === "due-date") {
+        const aDue = progress[a.id]?.nextReviewDate || "9999";
+        const bDue = progress[b.id]?.nextReviewDate || "9999";
+        return aDue.localeCompare(bDue);
+      }
+      // "latest" default
+      return (b.createdAt || "").localeCompare(a.createdAt || "");
+    });
+  }, [vocab, search, selectedCefr, selectedPos, selectedTopic, selectedStatus, sortOrder, bookmarks, progress]);
 
-  // Prevent hydration mismatch by rendering a skeleton until mounted on client
-  if (!isMounted) {
-    return (
-      <div className="container mx-auto max-w-4xl px-4 py-6 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="h-8 w-56 rounded-xl bg-muted animate-pulse mb-2" />
-            <div className="h-4 w-72 rounded bg-muted/60 animate-pulse" />
-          </div>
-          <div className="flex gap-2">
-            <div className="h-9 w-24 rounded-xl bg-muted animate-pulse" />
-            <div className="h-9 w-28 rounded-xl bg-muted animate-pulse" />
-          </div>
-        </div>
-        <div className="h-11 w-full rounded-2xl bg-muted/60 animate-pulse" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-48 rounded-3xl border border-border/60 bg-card p-5 animate-pulse flex flex-col justify-between">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <div className="h-6 w-32 rounded-lg bg-muted" />
-                  <div className="h-6 w-16 rounded-lg bg-muted/60" />
-                </div>
-                <div className="h-4 w-3/4 rounded bg-muted/70" />
-                <div className="h-4 w-1/2 rounded bg-muted/50" />
-              </div>
-              <div className="pt-3 border-t border-border/40 flex justify-between">
-                <div className="h-7 w-20 rounded-lg bg-muted/60" />
-                <div className="h-7 w-24 rounded-lg bg-muted/60" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  // Pagination calculation
+  const totalItems = filteredAndSortedWords.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const paginatedWords = useMemo(() => {
+    const start = (currentPageSafe - 1) * pageSize;
+    return filteredAndSortedWords.slice(start, start + pageSize);
+  }, [filteredAndSortedWords, currentPageSafe, pageSize]);
+
+  // Reset page to 1 when filters change
+  const handleFilterChange = <T,>(setter: (val: T) => void, val: T) => {
+    setter(val);
+    setCurrentPage(1);
+  };
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-6 space-y-6">
-      {/* Delete Success Toast */}
-      {deleteToast && (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-800 dark:text-emerald-300 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="flex items-center gap-2">
-            <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="font-semibold">{deleteToast}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDeleteToast(null)}
-            className="text-muted-foreground hover:text-foreground cursor-pointer"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Header and Action Buttons */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Vocabulary Library</h1>
-            {isAdminUnlocked ? (
-              <Badge variant="outline" className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold py-0.5">
-                <ShieldCheck className="h-3 w-3 text-emerald-500" />
-                <span>Admin Mode</span>
-              </Badge>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Explore, search, and manage your personal word collection ({vocab.length} words)
+    <div className="container mx-auto max-w-6xl px-4 py-6 md:py-8 space-y-6">
+      {/* Top Header: Title & Actions */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground flex items-center gap-2.5">
+            <span>Vocabulary Explorer</span>
+            <Badge variant="secondary" className="text-xs font-mono font-bold" suppressHydrationWarning>
+              {isMounted ? totalItems : INITIAL_VOCABULARY.length} Words
+            </Badge>
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            ค้นหา กรองคำศัพท์ตามระดับ CEFR และฟังเสียงอ่านสำเนียง US/UK
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Admin Unlock Indicator / Button */}
-          {!isAdminUnlocked && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setHeaderAdminError("");
-                setHeaderAdminInput("");
-                setIsAdminModalOpen(true);
-              }}
-              title="ปลดล็อคสิทธิ์แอดมินเพื่อลบคำศัพท์ได้สะดวก"
-              className="rounded-xl text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              <span>ปลดล็อค Admin</span>
-            </Button>
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleResetToDefault}
-            title="Reset words"
-            className="rounded-xl text-xs"
-          >
-            <RotateCcw className="h-3.5 w-3.5 mr-1" />
-            Reset
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={() => setIsImportOpen(true)}
-            className="rounded-xl text-xs gap-1.5 shadow-sm"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            <span>Quick Import</span>
-          </Button>
-
-          <Link href="/admin/import">
-            <Button
-              size="sm"
-              variant="secondary"
-              className="rounded-xl text-xs gap-1.5 font-semibold"
-            >
-              <Shield className="h-3.5 w-3.5 text-primary" />
-              <span>Admin Import</span>
-            </Button>
-          </Link>
-        </div>
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/admin/vocabulary">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-2xl gap-1.5 text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/20"
+                title="ไปยังหน้าจัดการคำศัพท์ (เพิ่ม/แก้ไข/ลบ/นำเข้า) สำหรับแอดมิน"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span>จัดการคำศัพท์ (Admin Portal)</span>
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
 
-      {/* Search and CEFR Filter Bar */}
-      <div className="space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search word, translation, definition, or topic..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 h-11 rounded-2xl bg-card"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-
-        {/* CEFR Level filter pills & Lock Filter */}
-        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <div className="flex items-center gap-1.5">
-            {CEFR_TABS.map((tab) => {
-              const isSelected = selectedCefr === tab;
-              return (
+      {/* Search & Filter Bar */}
+      <Card className="rounded-3xl border-border/80 shadow-xs bg-card/90">
+        <CardContent className="p-4 sm:p-5 space-y-4">
+          {/* Row 1: Search Input + View Toggles */}
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="ค้นหาคำศัพท์, คำแปลไทย, ความหมายอังกฤษ, หัวข้อ..."
+                value={search}
+                onChange={(e) => handleFilterChange(setSearch, e.target.value)}
+                className="pl-10 h-11 rounded-2xl bg-background text-sm"
+              />
+              {search && (
                 <button
-                  key={tab}
-                  onClick={() => setSelectedCefr(tab)}
-                  className={`px-3 py-1 text-xs font-semibold rounded-full transition-colors whitespace-nowrap cursor-pointer ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                  }`}
+                  type="button"
+                  onClick={() => handleFilterChange(setSearch, "")}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
                 >
-                  {tab}
+                  <X className="h-3.5 w-3.5" />
                 </button>
-              );
-            })}
+              )}
+            </div>
+
+            {/* Grid vs List View Toggle */}
+            <div className="flex items-center gap-1 self-end sm:self-auto shrink-0 bg-muted/60 p-1 rounded-2xl border border-border/60">
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                  viewMode === "grid"
+                    ? "bg-background text-primary shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="Grid View"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`p-2 rounded-xl transition-colors cursor-pointer ${
+                  viewMode === "list"
+                    ? "bg-background text-primary shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="List View"
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setFilterLockedOnly((prev) => !prev)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer border shrink-0 ${
-              filterLockedOnly
-                ? "bg-amber-500 text-white border-amber-600 shadow-xs"
-                : "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/20"
-            }`}
-            title="กรองแสดงเฉพาะคำที่กดล็อคไว้"
-          >
-            <Lock className="h-3 w-3" />
-            <span>คำที่ล็อค ({lockedCount})</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Notice about Locked words */}
-      {lockedCount > 0 && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <span>
-              คุณมี <strong>{lockedCount} คำ</strong> ที่ล็อคไว้ (คำเหล่านี้จะไม่ถูกเขียนทับเวลาคุณนำเข้าไฟล์ CSV ใหม่)
-            </span>
+          {/* Row 2: CEFR Level Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            <span className="text-xs font-semibold text-muted-foreground mr-1 shrink-0">CEFR:</span>
+            {CEFR_TABS.map((level) => (
+              <button
+                key={level}
+                type="button"
+                onClick={() => handleFilterChange(setSelectedCefr, level)}
+                className={`rounded-xl px-3 py-1 text-xs font-mono font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCefr === level
+                    ? "bg-primary text-primary-foreground shadow-xs scale-105"
+                    : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {level}
+              </button>
+            ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setFilterLockedOnly((prev) => !prev)}
-            className="text-[11px] underline font-bold hover:text-foreground cursor-pointer shrink-0"
-          >
-            {filterLockedOnly ? "แสดงทั้งหมด" : "ดูคำที่ล็อค"}
-          </button>
-        </div>
-      )}
 
-      {/* Word Grid */}
-      {filteredWords.length === 0 ? (
-        <EmptyState
-          icon={BookA}
-          title="No Matching Words Found"
-          description={
-            filterLockedOnly
-              ? "ยังไม่มีคำศัพท์ที่ถูกล็อคไว้ คุณสามารถกดปุ่ม 🔒 บนการ์ดคำศัพท์เพื่อล็อคคำที่ต้องการได้"
-              : `We couldn't find any vocabulary matching "${search}". Try searching another keyword or clearing your filter.`
-          }
-          actionLabel="Clear Filters"
-          onAction={() => {
-            setSearch("");
-            setSelectedCefr("ALL");
-            setFilterLockedOnly(false);
-          }}
-        />
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {filteredWords.map((word) => (
-            <Card key={word.id} className="rounded-3xl border-border/80 overflow-hidden hover:border-primary/40 transition-all hover:shadow-sm flex flex-col justify-between">
-              <CardContent className="p-5 space-y-3 flex-1 flex flex-col justify-between">
-                <div>
-                  {/* Card Header: Word, CEFR, Part of Speech & Audio Pronunciation */}
+          {/* Row 3: Dropdowns for Part of Speech, Topic, Status, and Sort */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+            {/* Part of Speech */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">Type</label>
+              <select
+                value={selectedPos}
+                onChange={(e) => handleFilterChange(setSelectedPos, e.target.value as PartOfSpeech | "ALL")}
+                className="w-full h-9 rounded-xl border border-border/80 bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+              >
+                {PART_OF_SPEECH_LIST.map((pos) => (
+                  <option key={pos.value} value={pos.value}>
+                    {pos.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Topic Filter */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">Topic</label>
+              <select
+                value={selectedTopic}
+                onChange={(e) => handleFilterChange(setSelectedTopic, e.target.value)}
+                className="w-full h-9 rounded-xl border border-border/80 bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+              >
+                <option value="ALL">All Topics</option>
+                {availableTopics.map((topic) => (
+                  <option key={topic} value={topic}>
+                    {topic}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">Status</label>
+              <select
+                value={selectedStatus}
+                onChange={(e) => handleFilterChange(setSelectedStatus, e.target.value)}
+                className="w-full h-9 rounded-xl border border-border/80 bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="new">New (ยังไม่เริ่ม)</option>
+                <option value="learning">Learning (กำลังเรียน)</option>
+                <option value="review">Review (ทบทวน)</option>
+                <option value="mastered">Mastered (แม่นยำ)</option>
+                <option value="due">Due Today (ครบกำหนด)</option>
+                <option value="bookmarked">Bookmarked (ติดดาว)</option>
+                <option value="locked">Locked (ล็อคแล้ว)</option>
+              </select>
+            </div>
+
+            {/* Sort Order */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">Sort By</label>
+              <select
+                value={sortOrder}
+                onChange={(e) => handleFilterChange(setSortOrder, e.target.value)}
+                className="w-full h-9 rounded-xl border border-border/80 bg-background px-2.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+              >
+                <option value="latest">Latest Added</option>
+                <option value="alphabetical-asc">A ➔ Z</option>
+                <option value="alphabetical-desc">Z ➔ A</option>
+                <option value="cefr-asc">Level (A1 ➔ C2)</option>
+                <option value="cefr-desc">Level (C2 ➔ A1)</option>
+                <option value="due-date">Due Date</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Empty State */}
+      {paginatedWords.length === 0 ? (
+        <div className="py-12">
+          <EmptyState
+            icon={BookA}
+            title="ไม่พบคำศัพท์ที่ค้นหา"
+            description="ลองปรับคำค้นหา หรือรีเซ็ตตัวกรองระดับ CEFR / ชนิดของคำ เพื่อค้นหาคำศัพท์อีกครั้ง"
+            actionLabel="ล้างตัวกรองทั้งหมด"
+            onAction={() => {
+              setSearch("");
+              setSelectedCefr("ALL");
+              setSelectedPos("ALL");
+              setSelectedTopic("ALL");
+              setSelectedStatus("ALL");
+              setSortOrder("latest");
+              setCurrentPage(1);
+            }}
+          />
+        </div>
+      ) : viewMode === "grid" ? (
+        /* GRID VIEW */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paginatedWords.map((word) => {
+            const isBookmarked = bookmarks.includes(word.id);
+            const isWordLocked = Boolean(word.isLocked || word.is_locked);
+            const cefrGradient = CEFR_GRADIENTS[word.cefrLevel] || CEFR_GRADIENTS.A1;
+            const initials = word.word.slice(0, 2).toUpperCase();
+
+            return (
+              <Card
+                key={word.id}
+                onClick={() => setSelectedWordForDetails(word)}
+                className="group rounded-3xl border-border/80 hover:border-primary/50 transition-all hover:shadow-md cursor-pointer flex flex-col justify-between overflow-hidden bg-card"
+              >
+                <CardContent className="p-5 flex flex-col justify-between h-full space-y-3">
+                  {/* Card Header with Thumbnail & Quick Badges */}
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xl font-bold tracking-tight text-foreground">{word.word}</h3>
-                        <Badge variant="outline" className="text-[10px] px-1.5 uppercase font-mono">
-                          {word.cefrLevel}
-                        </Badge>
+                    <div className="flex items-center gap-3">
+                      {/* Typographic Thumbnail Badge */}
+                      <div
+                        className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${cefrGradient} border flex items-center justify-center font-black text-sm tracking-wider shadow-xs shrink-0 select-none`}
+                        title={`CEFR Level ${word.cefrLevel}`}
+                      >
+                        {initials}
                       </div>
-                      <span className="text-xs italic text-muted-foreground">{word.partOfSpeech}</span>
+
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="text-base font-bold text-foreground group-hover:text-primary transition-colors truncate">
+                            {word.word}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono font-bold uppercase">
+                            {word.cefrLevel}
+                          </Badge>
+                          <span className="text-xs italic text-muted-foreground truncate">
+                            {word.partOfSpeech || word.part_of_speech}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
+                    {/* Bookmark & Lock indicators */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleBookmark(word.id, e)}
+                        className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                          isBookmarked
+                            ? "text-amber-500 fill-amber-500 hover:bg-amber-500/15"
+                            : "text-muted-foreground/40 hover:text-amber-500 hover:bg-muted"
+                        }`}
+                        title={isBookmarked ? "นำออกจากคำที่ติดดาว" : "ติดดาวคำนี้"}
+                      >
+                        <Star className={`h-4 w-4 ${isBookmarked ? "fill-amber-500" : ""}`} />
+                      </button>
+
+                      {isWordLocked && (
+                        <span title="คำนี้ถูกตั้งค่าล็อคไว้" className="text-amber-600 dark:text-amber-400 p-1">
+                          <Lock className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Definitions & Translation */}
+                  <div className="space-y-1.5 py-1">
+                    {word.translation &&
+                      (showThai ? (
+                        <p className="text-sm font-semibold text-secondary-foreground leading-snug">
+                          {word.translation}
+                        </p>
+                      ) : (
+                        <p
+                          className="text-xs font-medium text-muted-foreground/70 filter blur-[4px] hover:blur-none transition-all duration-200 cursor-pointer select-none"
+                          title="แตะหรือชี้เพื่อดูคำแปลภาษาไทย (โหมดฝึกภาษาอังกฤษล้วน)"
+                        >
+                          {word.translation}
+                        </p>
+                      ))}
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                      {word.definition}
+                    </p>
+                  </div>
+
+                  {/* Footer Audio Pronunciation Buttons */}
+                  <div
+                    className="flex items-center justify-between gap-2 pt-2 border-t border-border/50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="flex items-center gap-1.5">
                       <PronunciationButton
                         word={word.word}
@@ -459,6 +548,7 @@ export default function VocabularyPage() {
                         size="sm"
                         phonetic={word.phoneticUs || word.phonetic_us}
                         audioUrl={word.audioUsUrl || word.audio_us_url}
+                        isDefault={preferredAccent === "US"}
                       />
                       <PronunciationButton
                         word={word.word}
@@ -466,368 +556,276 @@ export default function VocabularyPage() {
                         size="sm"
                         phonetic={word.phoneticUk || word.phonetic_uk}
                         audioUrl={word.audioUkUrl || word.audio_uk_url}
+                        isDefault={preferredAccent === "UK"}
                       />
                     </div>
-                  </div>
 
-                  {/* Definitions & Translation */}
-                  <div className="space-y-1.5 mt-3">
-                    <p className="text-xs font-medium text-foreground leading-snug">
-                      {word.definition}
-                    </p>
-                    {word.translation && (
-                      <p className="text-xs text-secondary-foreground font-semibold">
-                        แปล: {word.translation}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Example sentence */}
-                  {word.example && (
-                    <div className="rounded-xl bg-muted/40 p-2.5 text-xs italic text-muted-foreground border border-border/40 mt-3">
-                      &ldquo;{word.example}&rdquo;
-                    </div>
-                  )}
-
-                  {/* Topic & Source */}
-                  {word.topic && (
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-2">
-                      <span className="rounded-md bg-secondary/60 px-2 py-0.5 text-secondary-foreground font-medium">
+                    {word.topic && (
+                      <span className="text-[10px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-lg truncate max-w-[90px]">
                         {word.topic}
                       </span>
-                      {word.source && (
-                        <span className="text-[10px] truncate max-w-[150px] opacity-75">
-                          {word.source}
-                        </span>
-                      )}
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        /* LIST VIEW */
+        <div className="rounded-3xl border border-border/80 bg-card overflow-hidden shadow-xs divide-y divide-border/60">
+          {paginatedWords.map((word) => {
+            const isBookmarked = bookmarks.includes(word.id);
+            const cefrGradient = CEFR_GRADIENTS[word.cefrLevel] || CEFR_GRADIENTS.A1;
+            const initials = word.word.slice(0, 2).toUpperCase();
+
+            return (
+              <div
+                key={word.id}
+                onClick={() => setSelectedWordForDetails(word)}
+                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-muted/30 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Typographic Thumbnail */}
+                  <div
+                    className={`h-10 w-10 rounded-xl bg-gradient-to-br ${cefrGradient} border flex items-center justify-center font-bold text-xs shrink-0 select-none`}
+                  >
+                    {initials}
+                  </div>
+
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-base text-foreground truncate">
+                        {word.word}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] font-mono font-bold px-1.5 py-0 uppercase">
+                        {word.cefrLevel}
+                      </Badge>
+                      <span className="text-xs italic text-muted-foreground truncate">
+                        ({word.partOfSpeech || word.part_of_speech})
+                      </span>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2 text-xs">
+                      {word.translation &&
+                        (showThai ? (
+                          <span className="font-medium text-foreground">{word.translation}</span>
+                        ) : (
+                          <span
+                            className="font-medium text-muted-foreground/70 filter blur-[3px] hover:blur-none transition-all duration-200 cursor-pointer select-none"
+                            title="แตะหรือชี้เพื่อดูคำแปลไทย"
+                          >
+                            {word.translation}
+                          </span>
+                        ))}
+                      {word.translation && <span className="text-muted-foreground">&bull;</span>}
+                      <span className="text-muted-foreground truncate">{word.definition}</span>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Card Action Footer: Lock status on left, Big Red Delete Button on right */}
-                <div className="flex items-center justify-between pt-3 border-t border-border/60 mt-3">
-                  {/* Lock / Unlock Toggle */}
+                {/* Right Side Controls */}
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto" onClick={(e) => e.stopPropagation()}>
+                  <PronunciationButton
+                    word={word.word}
+                    accent="US"
+                    size="sm"
+                    audioUrl={word.audioUsUrl || word.audio_us_url}
+                  />
+                  <PronunciationButton
+                    word={word.word}
+                    accent="UK"
+                    size="sm"
+                    audioUrl={word.audioUkUrl || word.audio_uk_url}
+                  />
                   <button
                     type="button"
-                    onClick={() => handleToggleLock(word.id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                      word.isLocked || word.is_locked
-                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 shadow-xs hover:bg-amber-500/25"
-                        : "bg-secondary/60 text-muted-foreground hover:bg-secondary hover:text-foreground border border-border/40"
+                    onClick={(e) => handleToggleBookmark(word.id, e)}
+                    className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                      isBookmarked ? "text-amber-500 hover:bg-amber-500/15" : "text-muted-foreground hover:text-amber-500"
                     }`}
-                    title={
-                      word.isLocked || word.is_locked
-                        ? "คำนี้ล็อคไว้แล้ว (จะไม่ถูกเขียนทับเมื่อ Import) คลิกเพื่อปลดล็อค"
-                        : "คลิกเพื่อล็อคคำนี้ (จะไม่ถูกเขียนทับเมื่อ Import)"
-                    }
+                    title={isBookmarked ? "Unbookmark" : "Bookmark"}
                   >
-                    {word.isLocked || word.is_locked ? (
-                      <>
-                        <Lock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>ล็อคแล้ว</span>
-                      </>
-                    ) : (
-                      <>
-                        <Unlock className="h-3.5 w-3.5 opacity-60" />
-                        <span className="opacity-75">ปลดล็อค</span>
-                      </>
-                    )}
+                    <Star className={`h-4 w-4 ${isBookmarked ? "fill-amber-500" : ""}`} />
                   </button>
-
-                  {/* Prominent Red Delete Word Button */}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleRequestDelete(word)}
-                    className="h-8 px-3 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs font-bold gap-1.5 transition-all cursor-pointer shadow-xs"
-                    title={`ลบคำว่า "${word.word}" ออกจากคลัง (Admin)`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>ลบคำนี้</span>
-                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Quick Import Modal */}
-      {isImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2">
-                <Upload className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-bold text-foreground">Import Vocabulary</h2>
-              </div>
-              <button
-                onClick={() => {
-                  setIsImportOpen(false);
-                  setImportResult(null);
-                }}
-                className="text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>แสดง</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="h-8 rounded-lg border border-border/80 bg-background px-2 text-xs font-semibold cursor-pointer"
+            >
+              <option value={12}>12</option>
+              <option value={24}>24</option>
+              <option value={48}>48</option>
+            </select>
+            <span>คำต่อหน้า (ทั้งหมด {totalItems} คำ)</span>
+          </div>
 
-            <p className="text-xs text-muted-foreground">
-              Paste your licensed or personal vocabulary data in JSON or CSV format. Data is validated with Zod before adding.
-            </p>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPageSafe <= 1}
+              className="h-8 w-8 p-0 rounded-xl"
+              title="Previous Page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
 
-            <div className="flex gap-2">
-              <Button
-                variant={importType === "json" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setImportType("json")}
-                className="rounded-xl text-xs gap-1.5"
-              >
-                <FileCode className="h-3.5 w-3.5" />
-                JSON
-              </Button>
-              <Button
-                variant={importType === "csv" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setImportType("csv")}
-                className="rounded-xl text-xs gap-1.5"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                CSV
-              </Button>
-            </div>
+            <span className="text-xs font-semibold px-3 py-1 rounded-xl bg-muted/60 font-mono">
+              {currentPageSafe} / {totalPages}
+            </span>
 
-            <textarea
-              className="w-full h-44 rounded-2xl border border-input bg-background p-3 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              placeholder={
-                importType === "json"
-                  ? '[\n  {\n    "word": "eloquent",\n    "partOfSpeech": "adjective",\n    "cefrLevel": "C1",\n    "definition": "Fluent in speech",\n    "example": "An eloquent speaker."\n  }\n]'
-                  : "word,partOfSpeech,cefrLevel,definition,example\neloquent,adjective,C1,Fluent in speech,An eloquent speaker."
-              }
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPageSafe >= totalPages}
+              className="h-8 w-8 p-0 rounded-xl"
+              title="Next Page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
-            {/* Validation Feedback */}
-            {importResult && (
-              <div className="rounded-2xl bg-muted/40 p-3 space-y-2 border border-border/60 text-xs">
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-emerald-500" />
-                  <span className="font-semibold text-foreground">
-                    Valid Words: {importResult.successCount}
+      {/* Word Details Modal */}
+      {selectedWordForDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-50 duration-200">
+          <div className="relative w-full max-w-lg rounded-3xl border border-border bg-card p-6 md:p-8 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setSelectedWordForDetails(null)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-2 rounded-xl hover:bg-muted"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            {/* Header: Title, Level & Part of Speech */}
+            <div className="flex items-start justify-between gap-3 pr-8">
+              <div>
+                <h2 className="text-3xl font-black tracking-tight text-foreground">
+                  {selectedWordForDetails.word}
+                </h2>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <Badge variant="outline" className="font-mono font-bold uppercase text-xs">
+                    {selectedWordForDetails.cefrLevel}
+                  </Badge>
+                  <span className="text-xs italic text-muted-foreground">
+                    {selectedWordForDetails.partOfSpeech || selectedWordForDetails.part_of_speech}
                   </span>
-                  {importResult.errorCount > 0 && (
-                    <span className="text-destructive font-semibold flex items-center gap-1">
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      {importResult.errorCount} Invalid
-                    </span>
+                  {selectedWordForDetails.topic && (
+                    <Badge variant="secondary" className="text-[11px]">
+                      {selectedWordForDetails.topic}
+                    </Badge>
                   )}
                 </div>
-
-                {importResult.errors.length > 0 && (
-                  <div className="max-h-24 overflow-y-auto space-y-1 text-destructive font-mono text-[11px] pt-1">
-                    {importResult.errors.slice(0, 3).map((err, i) => (
-                      <p key={i}>&bull; {err.word ? `"${err.word}": ` : ""}{err.error}</p>
-                    ))}
-                    {importResult.errors.length > 3 && (
-                      <p>+ {importResult.errors.length - 3} more errors...</p>
-                    )}
-                  </div>
-                )}
               </div>
-            )}
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleTestImport}
-                disabled={!importText.trim()}
-                className="rounded-xl"
-              >
-                Validate Data
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleApplyImport}
-                disabled={!importResult || importResult.successCount === 0}
-                className="rounded-xl gap-1.5"
-              >
-                <Check className="h-4 w-4" />
-                <span>Import {importResult ? importResult.successCount : ""} Words</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Header Admin Unlock Modal */}
-      {isAdminModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2 text-primary">
-                <KeyRound className="h-5 w-5" />
-                <h2 className="text-lg font-bold">ปลดล็อคโหมด Admin</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAdminModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleHeaderAdminUnlock} className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                กรอกรหัสผ่าน Admin เพื่อให้สามารถลบคำศัพท์ได้โดยตรงโดยไม่ต้องยืนยันซ้ำ
-              </p>
-
-              <Input
-                type="password"
-                placeholder="รหัสผ่าน Admin (ทดลองใช้: admin123)"
-                value={headerAdminInput}
-                onChange={(e) => {
-                  setHeaderAdminInput(e.target.value);
-                  setHeaderAdminError("");
-                }}
-                className="h-10 rounded-xl text-xs bg-background"
-                autoFocus
-              />
-
-              {headerAdminError && (
-                <p className="text-[11px] text-destructive font-medium">
-                  {headerAdminError}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
-                <Button
+              <div className="flex items-center gap-1.5">
+                <button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsAdminModalOpen(false)}
-                  className="rounded-xl text-xs"
+                  onClick={() => handleToggleBookmark(selectedWordForDetails.id)}
+                  className={`p-2 rounded-xl border transition-colors ${
+                    bookmarks.includes(selectedWordForDetails.id)
+                      ? "border-amber-500 bg-amber-500/15 text-amber-500"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                  title="Bookmark"
                 >
-                  ยกเลิก
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="rounded-xl text-xs gap-1.5 font-semibold"
-                >
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  <span>ปลดล็อค</span>
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Admin Delete Confirmation Modal */}
-      {wordToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2 text-destructive">
-                <Trash2 className="h-5 w-5" />
-                <h2 className="text-lg font-bold">ยืนยันการลบคำศัพท์</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setWordToDelete(null);
-                  setPasscodeError("");
-                }}
-                className="text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold tracking-tight text-foreground">
-                    {wordToDelete.word}
-                  </h3>
-                  <Badge variant="outline" className="text-[10px] font-mono uppercase">
-                    {wordToDelete.cefrLevel}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {wordToDelete.definition}
-                </p>
-                {wordToDelete.translation && (
-                  <p className="text-xs text-foreground font-semibold">
-                    แปล: {wordToDelete.translation}
-                  </p>
+                  <Star className={`h-4 w-4 ${bookmarks.includes(selectedWordForDetails.id) ? "fill-amber-500" : ""}`} />
+                </button>
+                {(selectedWordForDetails.isLocked || selectedWordForDetails.is_locked) && (
+                  <span
+                    className="p-2 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                    title="คำนี้ถูกตั้งค่าล็อคไว้"
+                  >
+                    <Lock className="h-4 w-4" />
+                  </span>
                 )}
               </div>
+            </div>
 
-              {(wordToDelete.isLocked || wordToDelete.is_locked) && (
-                <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-800 dark:text-amber-300">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                  <span>
-                    <strong>คำเตือน:</strong> คำนี้ถูกล็อคไว้ หากกดยืนยัน คำนี้จะถูกลบออกจากระบบอย่างถาวร
+            {/* Pronunciations */}
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-muted/40 border border-border/60">
+              <PronunciationButton
+                word={selectedWordForDetails.word}
+                accent="US"
+                phonetic={selectedWordForDetails.phoneticUs || selectedWordForDetails.phonetic_us}
+                audioUrl={selectedWordForDetails.audioUsUrl || selectedWordForDetails.audio_us_url}
+              />
+              <PronunciationButton
+                word={selectedWordForDetails.word}
+                accent="UK"
+                phonetic={selectedWordForDetails.phoneticUk || selectedWordForDetails.phonetic_uk}
+                audioUrl={selectedWordForDetails.audioUkUrl || selectedWordForDetails.audio_uk_url}
+              />
+            </div>
+
+            {/* Meanings */}
+            <div className="space-y-3 text-sm">
+              {selectedWordForDetails.translation && (
+                <div className="rounded-2xl bg-primary/10 border border-primary/20 p-3.5">
+                  <span className="text-[11px] font-bold text-primary block mb-0.5">
+                    คำแปลภาษาไทย
                   </span>
+                  <p className="text-lg font-bold text-foreground">
+                    {selectedWordForDetails.translation}
+                  </p>
                 </div>
               )}
 
-              {/* Admin authentication if not yet authenticated */}
-              {!isAdminUnlocked && (
-                <div className="space-y-2 pt-1 border-t border-border/60">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                    <KeyRound className="h-3.5 w-3.5 text-primary" />
-                    <span>กรุณากรอกรหัสผ่าน Admin เพื่อยืนยัน</span>
-                  </div>
-                  <Input
-                    type="password"
-                    placeholder="รหัสผ่าน Admin (เช่น admin123)"
-                    value={adminPasscodeInput}
-                    onChange={(e) => {
-                      setAdminPasscodeInput(e.target.value);
-                      setPasscodeError("");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleConfirmDelete();
-                      }
-                    }}
-                    className="h-10 rounded-xl text-xs bg-background"
-                    autoFocus
-                  />
-                  {passcodeError && (
-                    <p className="text-[11px] text-destructive font-medium">
-                      {passcodeError}
+              <div className="rounded-2xl bg-muted/30 border border-border/50 p-3.5 space-y-1">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                  English Meaning
+                </span>
+                <p className="text-foreground leading-relaxed">
+                  {selectedWordForDetails.definition}
+                </p>
+              </div>
+
+              {selectedWordForDetails.example && (
+                <div className="rounded-2xl bg-secondary/40 border border-secondary p-3.5 space-y-1">
+                  <span className="text-[11px] font-bold text-primary block">
+                    ตัวอย่างประโยค
+                  </span>
+                  <p className="italic text-foreground font-serif">
+                    &ldquo;{selectedWordForDetails.example}&rdquo;
+                  </p>
+                  {selectedWordForDetails.exampleTranslation && (
+                    <p className="text-xs text-muted-foreground pt-1 border-t border-border/40">
+                      {selectedWordForDetails.exampleTranslation}
                     </p>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/60">
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end pt-2 border-t border-border/50">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setWordToDelete(null);
-                  setPasscodeError("");
-                }}
-                className="rounded-xl text-xs"
+                onClick={() => setSelectedWordForDetails(null)}
+                className="rounded-2xl text-xs font-medium"
               >
-                ยกเลิก
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleConfirmDelete}
-                className="rounded-xl text-xs gap-1.5 font-semibold shadow-xs"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>ยืนยันการลบ</span>
+                ปิดหน้าต่าง
               </Button>
             </div>
           </div>

@@ -15,6 +15,8 @@ import {
   Flame,
   Calendar,
 } from "lucide-react";
+import { calculateStreak } from "@/lib/srs/sm2";
+import { cn } from "@/lib/utils";
 
 const CEFR_LEVELS: CEFRLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
@@ -32,6 +34,7 @@ export default function ProgressPage() {
   const progressList = Object.values(progress);
   const learnedCount = progressList.filter((p) => p.isLearned).length;
   const masteryPercentage = totalWords > 0 ? Math.round((learnedCount / totalWords) * 100) : 0;
+  const streak = React.useMemo(() => calculateStreak(progress), [progress]);
 
   // Breakdown by CEFR level
   const cefrStats = CEFR_LEVELS.map((level) => {
@@ -92,14 +95,16 @@ export default function ProgressPage() {
         <Card className="rounded-3xl border-border/80 p-5 bg-gradient-to-br from-amber-500/10 to-card">
           <div className="flex items-center justify-between text-muted-foreground mb-3">
             <span className="text-xs font-semibold uppercase tracking-wider">Current Streak</span>
-            <Flame className="h-5 w-5 text-amber-500 fill-amber-500" />
+            <Flame className={cn("h-5 w-5", streak > 0 ? "text-amber-500 fill-amber-500" : "text-muted-foreground/50")} />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-foreground">3</span>
-            <span className="text-xs text-muted-foreground font-medium">Consecutive Days</span>
+            <span className="text-3xl font-extrabold text-foreground" suppressHydrationWarning>{streak}</span>
+            <span className="text-xs text-muted-foreground font-medium">
+              {streak === 0 ? "Days (เริ่มนับในวันถัดไป)" : streak === 1 ? "Consecutive Day" : "Consecutive Days"}
+            </span>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            Study today to keep your streak alive!
+            {streak === 0 ? "เริ่มต้นเรียนวันนี้ และเรียนต่อเนื่องในวันถัดไปเพื่อเริ่มนับ Streak!" : "ทบทวนวันนี้เพื่อรักษา Streak ต่อเนื่อง!"}
           </p>
         </Card>
 

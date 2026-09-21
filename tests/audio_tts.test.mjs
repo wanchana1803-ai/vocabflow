@@ -105,7 +105,7 @@ test("Audio Provider: selects active provider based on availability", () => {
     isAvailable() {
       return true; // Available
     }
-    async synthesize(word, accent) {
+    async synthesize() {
       return {
         audioBuffer: new Uint8Array([10, 20]).buffer,
         mimeType: "audio/mpeg",
@@ -245,7 +245,6 @@ test("Fallback Cascade: Stage 4 produces polite Thai message when all engines fa
 
 test("Concurrency Control: new playback aborts previous controller and stops audio", () => {
   let activeAudioPlaying = false;
-  let activeUtterancePlaying = false;
   let currentAbortController = null;
 
   const stopAllAudio = () => {
@@ -254,10 +253,9 @@ test("Concurrency Control: new playback aborts previous controller and stops aud
       currentAbortController = null;
     }
     activeAudioPlaying = false;
-    activeUtterancePlaying = false;
   };
 
-  const startPlayback = (id) => {
+  const startPlayback = () => {
     stopAllAudio();
     currentAbortController = new AbortController();
     activeAudioPlaying = true;

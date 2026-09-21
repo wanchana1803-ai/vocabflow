@@ -16,5 +16,15 @@ if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
 }
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
+  React.useEffect(() => {
+    try {
+      const isReduced = localStorage.getItem("vocabflow_reduced_motion") === "true";
+      document.documentElement.classList.toggle("reduce-motion", isReduced);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
 }
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useSyncExternalStore } from "react";
+import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 
 function subscribe(callback: () => void) {
   if (typeof window === "undefined") return () => {};
@@ -18,15 +18,22 @@ export function useLocalStorage<T>(
     () => false
   );
 
-  const [state, setState] = useState<T>(() => {
-    if (typeof window === "undefined") return initialValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? (JSON.parse(item) as T) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
+  const [state, setState] = useState<T>(initialValue);
+
+  // Sync state with localStorage after client hydration to prevent SSR mismatch
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const item = window.localStorage.getItem(key);
+        if (item !== null) {
+          setState(JSON.parse(item) as T);
+        }
+      } catch {
+        // fallback
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [key]);
 
   const setValue = useCallback(
     (value: T | ((val: T) => T)) => {

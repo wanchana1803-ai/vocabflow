@@ -3,7 +3,6 @@ import { AudioAccent, AudioPlayOptions } from "@/types/audio-provider";
 export type AccentType = AudioAccent;
 
 let activeAudioElement: HTMLAudioElement | null = null;
-let activeUtterance: SpeechSynthesisUtterance | null = null;
 let currentAbortController: AbortController | null = null;
 
 /**
@@ -36,7 +35,6 @@ export function stopAllAudio(): void {
     } catch {
       // ignore
     }
-    activeUtterance = null;
   }
 }
 
@@ -79,11 +77,8 @@ export async function playPronunciation({
       audio.preload = "auto";
       activeAudioElement = audio;
 
-      let started = false;
-
       audio.onplay = () => {
         if (abortController.signal.aborted) return;
-        started = true;
         onStart?.();
       };
 
@@ -182,7 +177,6 @@ function playWithWebSpeech(
       window.speechSynthesis.cancel();
 
       const utterance = new SpeechSynthesisUtterance(text);
-      activeUtterance = utterance;
 
       const targetLang = accent === "UK" ? "en-GB" : "en-US";
       utterance.lang = targetLang;
@@ -209,7 +203,6 @@ function playWithWebSpeech(
       };
 
       utterance.onend = () => {
-        activeUtterance = null;
         if (!abortController?.signal.aborted) {
           onEnd?.();
         }
@@ -217,7 +210,6 @@ function playWithWebSpeech(
       };
 
       utterance.onerror = () => {
-        activeUtterance = null;
         resolve(false);
       };
 

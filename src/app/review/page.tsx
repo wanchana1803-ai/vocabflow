@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { FlashcardCard } from "@/components/flashcards/flashcard-card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/feedback/empty-state";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord } from "@/types/vocabulary";
@@ -31,10 +30,6 @@ import {
   Sparkles,
   Undo2,
   CalendarCheck,
-  Flame,
-  Clock,
-  BookOpen,
-  Award,
   RefreshCw,
 } from "lucide-react";
 
@@ -74,7 +69,7 @@ export default function ReviewPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResumedSession, setIsResumedSession] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  const [reviewMode, setReviewMode] = useState<"due" | "all">("due");
+  const [reviewMode] = useState<"due" | "all">("due");
 
   const isSubmittingRef = useRef(false);
 
@@ -124,8 +119,10 @@ export default function ReviewPage() {
           session.queueWordIds &&
           session.queueWordIds.length === dueWords.length
         ) {
-          setQueueIndex(session.queueIndex);
-          setIsResumedSession(true);
+          queueMicrotask(() => {
+            setQueueIndex(session.queueIndex);
+            setIsResumedSession(true);
+          });
         }
       }
     } catch {

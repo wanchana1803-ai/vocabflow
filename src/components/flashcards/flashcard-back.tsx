@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { VocabularyWord } from "@/types/vocabulary";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, Quote, Tag, RotateCcw } from "lucide-react";
+import { BookOpen, Quote, Tag, RotateCcw, Eye, EyeOff } from "lucide-react";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import { cn } from "@/lib/utils";
 
 interface FlashcardBackProps {
@@ -22,6 +23,9 @@ const CEFR_COLORS: Record<string, string> = {
 };
 
 export function FlashcardBack({ word, onFlip, className }: FlashcardBackProps) {
+  const [showThaiPref] = useLocalStorage<boolean>("vocabflow_show_thai", true);
+  const [revealThai, setRevealThai] = useState(false);
+
   const definitionTh =
     word.definitionTh ||
     word.translation ||
@@ -93,15 +97,50 @@ export function FlashcardBack({ word, onFlip, className }: FlashcardBackProps) {
 
       {/* Main Content Area */}
       <div className="my-auto flex flex-col gap-4 py-4">
-        {/* 1. Thai Definition (Prominent) */}
-        <div className="rounded-2xl bg-primary/5 border border-primary/15 p-4 text-center">
-          <span className="text-xs font-semibold uppercase tracking-wider text-primary/80 block mb-1">
-            คำแปลภาษาไทย
-          </span>
-          <p className="text-2xl sm:text-3xl font-bold text-foreground">
-            {definitionTh || "ไม่มีคำแปลภาษาไทย"}
-          </p>
-        </div>
+        {/* 1. Thai Definition (Prominent or Hidden for immersion) */}
+        {showThaiPref || revealThai ? (
+          <div className="rounded-2xl bg-primary/5 border border-primary/15 p-4 text-center relative group">
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-primary/80">
+                คำแปลภาษาไทย
+              </span>
+              {!showThaiPref && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRevealThai(false);
+                  }}
+                  className="text-[10px] text-muted-foreground hover:text-primary inline-flex items-center gap-0.5 ml-1 p-0.5 rounded hover:bg-muted"
+                  title="ซ่อนคำแปลกลับ"
+                >
+                  <EyeOff className="h-3 w-3" />
+                  <span>ซ่อน</span>
+                </button>
+              )}
+            </div>
+            <p className="text-2xl sm:text-3xl font-bold text-foreground">
+              {definitionTh || "ไม่มีคำแปลภาษาไทย"}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-muted/30 border border-dashed border-border/70 p-4 text-center">
+            <span className="text-xs font-medium text-muted-foreground block mb-1">
+              คำแปลภาษาไทย (โหมดภาษาอังกฤษล้วน)
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRevealThai(true);
+              }}
+              className="mt-1 text-xs text-primary font-semibold hover:underline inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary/15 transition-colors cursor-pointer"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>แตะเพื่อแอบดูคำแปลชั่วคราว</span>
+            </button>
+          </div>
+        )}
 
         {/* 2. English Definition */}
         {definitionEn && (
@@ -126,7 +165,7 @@ export function FlashcardBack({ word, onFlip, className }: FlashcardBackProps) {
             <p className="text-sm sm:text-base italic text-foreground font-serif leading-relaxed">
               &ldquo;{example}&rdquo;
             </p>
-            {exampleTh && (
+            {exampleTh && (showThaiPref || revealThai) && (
               <p className="mt-1.5 text-xs sm:text-sm text-muted-foreground border-t border-border/30 pt-1.5">
                 {exampleTh}
               </p>

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 // Default configuration mirroring src/config/srs-config.ts
 const CONFIG = {
@@ -139,6 +140,69 @@ function calculateSRSMetrics(vocabList, progressMap, referenceDate = new Date())
     masteredCount,
     totalWords: vocabList.length,
   };
+}
+
+function calculateStreak(progressMap, referenceDate = new Date()) {
+  if (!progressMap) return 0;
+
+  let logs = [];
+  if (Array.isArray(progressMap)) {
+    if (progressMap.length > 0 && "history" in progressMap[0]) {
+      logs = progressMap.flatMap((p) => p.history || []);
+    } else {
+      logs = progressMap;
+    }
+  } else {
+    logs = Object.values(progressMap).flatMap((p) => p.history || []);
+  }
+
+  if (logs.length === 0) return 0;
+
+  const formatLocalDate = (d) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const uniqueDatesSet = new Set();
+  for (const log of logs) {
+    if (log && log.reviewedAt) {
+      const d = new Date(log.reviewedAt);
+      if (!isNaN(d.getTime())) {
+        uniqueDatesSet.add(formatLocalDate(d));
+      }
+    }
+  }
+
+  if (uniqueDatesSet.size === 0) return 0;
+
+  const todayStr = formatLocalDate(referenceDate);
+  const yesterday = new Date(referenceDate);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = formatLocalDate(yesterday);
+
+  const studiedToday = uniqueDatesSet.has(todayStr);
+  const studiedYesterday = uniqueDatesSet.has(yesterdayStr);
+
+  if (!studiedToday && !studiedYesterday) {
+    return 0;
+  }
+
+  let consecutiveDays = 0;
+  const checkDate = new Date(studiedToday ? referenceDate : yesterday);
+
+  while (true) {
+    const dateStr = formatLocalDate(checkDate);
+    if (uniqueDatesSet.has(dateStr)) {
+      consecutiveDays += 1;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  return Math.max(0, consecutiveDays - 1);
 }
 
 // ==========================================
@@ -342,3 +406,74 @@ test("SRS SM-2: calculateSRSMetrics calculates Due Today, New, and Mastered coun
   assert.equal(metrics.learningCount, 1);
   assert.equal(metrics.reviewCount, 1);
 });
+
+test("SRS Streak: starts at 0 and increments on consecutive days", () => {
+  const sm2Source = fs.readFileSync("src/lib/srs/sm2.ts", "utf8");
+  assert.ok(sm2Source.includes("export function calculateStreak"), "sm2.ts must export calculateStreak");
+
+  const today = new Date("2026-09-20T14:00:00.000Z");
+
+  // 1. New user (no reviews) -> Streak 0
+  assert.equal(calculateStreak({}, today), 0);
+
+  // 2. Day 1 of study (studied only today) -> Streak starts at 0
+  const day1Progress = {
+    "word-1": {
+      wordId: "word-1",
+      isLearned: true,
+      history: [{ reviewedAt: "2026-09-20T10:00:00.000Z" }],
+    },
+  };
+  assert.equal(calculateStreak(day1Progress, today), 0, "Day 1 streak must start at 0");
+
+  // 3. Day 2 of study (studied yesterday + today) -> Streak 1
+  const day2Progress = {
+    "word-1": {
+      wordId: "word-1",
+      isLearned: true,
+      history: [
+        { reviewedAt: "2026-09-19T10:00:00.000Z" },
+        { reviewedAt: "2026-09-20T10:00:00.000Z" },
+      ],
+    },
+  };
+  assert.equal(calculateStreak(day2Progress, today), 1, "Day 2 streak increments to 1");
+
+  // 4. Day 3 of study (3 consecutive days) -> Streak 2
+  const day3Progress = {
+    "word-1": {
+      wordId: "word-1",
+      isLearned: true,
+      history: [
+        { reviewedAt: "2026-09-18T10:00:00.000Z" },
+        { reviewedAt: "2026-09-19T10:00:00.000Z" },
+        { reviewedAt: "2026-09-20T10:00:00.000Z" },
+      ],
+    },
+  };
+  assert.equal(calculateStreak(day3Progress, today), 2, "Day 3 streak increments to 2");
+
+  // 5. Missed study day (studied 2 days ago, missed yesterday) -> Streak resets to 0
+  const missedProgress = {
+    "word-1": {
+      wordId: "word-1",
+      isLearned: true,
+      history: [{ reviewedAt: "2026-09-18T10:00:00.000Z" }],
+    },
+  };
+  assert.equal(calculateStreak(missedProgress, today), 0, "Missed study day resets streak to 0");
+
+  // 6. Studied yesterday and day before, hasn't studied today yet -> streak preserved as 1
+  const pendingTodayProgress = {
+    "word-1": {
+      wordId: "word-1",
+      isLearned: true,
+      history: [
+        { reviewedAt: "2026-09-18T10:00:00.000Z" },
+        { reviewedAt: "2026-09-19T10:00:00.000Z" },
+      ],
+    },
+  };
+  assert.equal(calculateStreak(pendingTodayProgress, today), 1, "Streak preserved pending today's study");
+});
+

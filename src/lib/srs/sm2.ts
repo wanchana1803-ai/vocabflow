@@ -1,4 +1,4 @@
-import {
+import type {
   ReviewLog,
   SRSRating,
   SRSState,
@@ -6,7 +6,7 @@ import {
   WordSRSStatus,
   SRSMetrics,
 } from "@/types/srs";
-import { DEFAULT_SRS_CONFIG, SRSAlgorithmConfig } from "@/config/srs-config";
+import { DEFAULT_SRS_CONFIG, type SRSAlgorithmConfig } from "@/config/srs-config";
 
 export { DEFAULT_SRS_CONFIG };
 export type { SRSAlgorithmConfig };
@@ -287,3 +287,82 @@ export async function resolveCurrentTime(isLoggedIn: boolean = false): Promise<D
   }
   return new Date();
 }
+
+/**
+ * Calculates current learning streak in consecutive days.
+ * Rule (Prompt requirement):
+ * - Brand new user (0 days studied) = 0 streak.
+ * - Day 1 of study (today only) = 0 streak (starts at 0, counts on consecutive days).
+ * - Day 2 of continuous study (yesterday + today) = 1 streak (starts counting on the next day).
+ * - Day N of continuous study = N - 1 streak.
+ * - If user misses a day (gap > 1 day without study) = resets to 0.
+ * - If user studied yesterday and hasn't studied yet today, streak is preserved pending today's study.
+ */
+export function calculateStreak(
+  progressMap: Record<string, UserWordProgress> | UserWordProgress[] | ReviewLog[],
+  referenceDate: Date = new Date()
+): number {
+  if (!progressMap) return 0;
+
+  let logs: { reviewedAt?: string }[] = [];
+  if (Array.isArray(progressMap)) {
+    if (progressMap.length > 0 && "history" in progressMap[0]) {
+      logs = (progressMap as UserWordProgress[]).flatMap((p) => p.history || []);
+    } else {
+      logs = progressMap as { reviewedAt?: string }[];
+    }
+  } else {
+    logs = Object.values(progressMap).flatMap((p) => p.history || []);
+  }
+
+  if (logs.length === 0) return 0;
+
+  const formatLocalDate = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const uniqueDatesSet = new Set<string>();
+  for (const log of logs) {
+    if (log && log.reviewedAt) {
+      const d = new Date(log.reviewedAt);
+      if (!isNaN(d.getTime())) {
+        uniqueDatesSet.add(formatLocalDate(d));
+      }
+    }
+  }
+
+  if (uniqueDatesSet.size === 0) return 0;
+
+  const todayStr = formatLocalDate(referenceDate);
+  const yesterday = new Date(referenceDate);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = formatLocalDate(yesterday);
+
+  const studiedToday = uniqueDatesSet.has(todayStr);
+  const studiedYesterday = uniqueDatesSet.has(yesterdayStr);
+
+  // If user hasn't studied today and hasn't studied yesterday, streak is broken
+  if (!studiedToday && !studiedYesterday) {
+    return 0;
+  }
+
+  let consecutiveDays = 0;
+  const checkDate = new Date(studiedToday ? referenceDate : yesterday);
+
+  while (true) {
+    const dateStr = formatLocalDate(checkDate);
+    if (uniqueDatesSet.has(dateStr)) {
+      consecutiveDays += 1;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  // Streak starts at 0 and increments on consecutive days
+  return Math.max(0, consecutiveDays - 1);
+}
+
