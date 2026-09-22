@@ -11,6 +11,7 @@ import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord } from "@/types/vocabulary";
 import { UserWordProgress } from "@/types/srs";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords } from "@/hooks/use-vocabulary-words";
 import { cn } from "@/lib/utils";
 import { calculateSRSMetrics, calculateStreak } from "@/lib/srs/sm2";
 import {
@@ -34,7 +35,7 @@ export default function HomePage() {
     () => false
   );
 
-  const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab } = useVocabularyWords();
   const [progress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
   const [dailyGoal] = useLocalStorage<number>("vocabflow_daily_goal", 10);
 

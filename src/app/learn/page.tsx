@@ -14,6 +14,7 @@ import { VocabularyWord } from "@/types/vocabulary";
 import { UserWordProgress, SRSRating } from "@/types/srs";
 import { calculateSM2, INITIAL_SRS_STATE } from "@/lib/srs/sm2";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords } from "@/hooks/use-vocabulary-words";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useStreak } from "@/hooks/use-streak";
 import { playPronunciation, stopAllAudio } from "@/lib/audio/speech";
@@ -35,7 +36,7 @@ export default function LearnPage() {
   const router = useRouter();
   const { streak } = useStreak();
 
-  const [vocab, setVocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab, setVocab } = useVocabularyWords();
   const [progress, setProgress] = useLocalStorage<Record<string, UserWordProgress>>(
     "vocabflow_progress",
     {}

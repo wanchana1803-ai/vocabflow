@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords } from "@/hooks/use-vocabulary-words";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord, CEFRLevel } from "@/types/vocabulary";
 import { UserWordProgress } from "@/types/srs";
@@ -27,7 +28,7 @@ export default function ProgressPage() {
     () => false
   );
 
-  const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab } = useVocabularyWords();
   const [progress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
 
   const totalWords = vocab.length;

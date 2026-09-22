@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords, broadcastVocabularyUpdate } from "@/hooks/use-vocabulary-words";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord } from "@/types/vocabulary";
 import { parseCSV, parseJSON, TARGET_COLUMNS, detectColumnMapping, TargetColumnKey } from "@/lib/import/parser";
@@ -36,7 +37,7 @@ import {
 } from "lucide-react";
 
 export default function AdminImportPage() {
-  const [vocab, setVocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab, setVocab } = useVocabularyWords();
 
   // Workflow steps: 1 = upload, 2 = mapping & validation preview, 3 = importing, 4 = complete
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -174,6 +175,22 @@ export default function AdminImportPage() {
 
     setExecutionResult(result);
     setVocab(result.finalVocabularyList);
+
+    // Sync the batch with central database (Supabase) so all users receive the words
+    try {
+      await fetch("/api/admin/vocabulary/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          words: validationResult.validRecords,
+          duplicateStrategy,
+        }),
+      });
+    } catch (err) {
+      console.warn("Could not sync batch to central database:", err);
+    }
+
+    broadcastVocabularyUpdate();
     setStep(4);
 
     try {

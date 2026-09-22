@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { PronunciationButton } from "@/components/audio/pronunciation-button";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords, broadcastVocabularyUpdate } from "@/hooks/use-vocabulary-words";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord, CEFRLevel, PartOfSpeech } from "@/types/vocabulary";
 import { AdminAuditLog } from "@/types/auth";
@@ -39,7 +40,7 @@ const CEFR_COLORS: Record<string, string> = {
 };
 
 export default function AdminVocabularyPage() {
-  const [vocab, setVocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab, setVocab, isLoading, refresh } = useVocabularyWords();
   const [search, setSearch] = useState("");
   const [selectedCefr, setSelectedCefr] = useState<CEFRLevel | "ALL">("ALL");
 

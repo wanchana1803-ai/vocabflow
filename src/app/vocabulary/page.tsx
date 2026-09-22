@@ -7,6 +7,7 @@ import { VocabularyWord, CEFRLevel, PartOfSpeech } from "@/types/vocabulary";
 import { UserWordProgress, WordSRSStatus } from "@/types/srs";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords } from "@/hooks/use-vocabulary-words";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,7 +82,7 @@ function VocabularyContent() {
     () => false
   );
 
-  const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab } = useVocabularyWords();
   const [progress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
   const [bookmarks, setBookmarks] = useLocalStorage<string[]>("vocabflow_bookmarks", []);
   const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");

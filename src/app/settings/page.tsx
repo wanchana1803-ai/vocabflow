@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords } from "@/hooks/use-vocabulary-words";
 import { INITIAL_VOCABULARY } from "@/config/initial-vocab";
 import { VocabularyWord } from "@/types/vocabulary";
 import { UserWordProgress } from "@/types/srs";
@@ -51,7 +52,7 @@ export default function SettingsPage() {
   const [reducedMotion, setReducedMotion] = useLocalStorage<boolean>("vocabflow_reduced_motion", false);
 
   // Data states
-  const [vocab, setVocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab, setVocab } = useVocabularyWords();
   const [progress, setProgress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
   const [, setBookmarks] = useLocalStorage<string[]>("vocabflow_bookmarks", []);
 

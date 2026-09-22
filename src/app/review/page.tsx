@@ -21,6 +21,7 @@ import {
 } from "@/lib/srs/sm2";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { useVocabularyWords } from "@/hooks/use-vocabulary-words";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { playPronunciation, stopAllAudio } from "@/lib/audio/speech";
 import confetti from "canvas-confetti";
@@ -51,7 +52,7 @@ const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export default function ReviewPage() {
   const router = useRouter();
-  const [vocab] = useLocalStorage<VocabularyWord[]>("vocabflow_words", INITIAL_VOCABULARY);
+  const { vocab } = useVocabularyWords();
   const [progress, setProgress] = useLocalStorage<Record<string, UserWordProgress>>("vocabflow_progress", {});
   const [preferredAccent] = useLocalStorage<"US" | "UK">("vocabflow_accent", "US");
   const [autoPlayAudio] = useLocalStorage<boolean>("vocabflow_autoplay_audio", false);
